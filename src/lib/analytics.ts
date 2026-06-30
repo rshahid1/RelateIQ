@@ -278,8 +278,10 @@ export interface LinkedInProfile {
   headline?: string
   company?: string
   city?: string
+  state?: string
   country?: string
   email?: string
+  phone?: string
   photo_url?: string
 }
 
@@ -288,7 +290,7 @@ export async function fetchLinkedInProfile(linkedinUrl: string): Promise<LinkedI
   if (!key) return null
   try {
     const res = await fetch(
-      `https://fresh-linkedin-profile-data.p.rapidapi.com/get-linkedin-profile?linkedin_url=${encodeURIComponent(linkedinUrl)}&include_skills=false`,
+      `https://fresh-linkedin-profile-data.p.rapidapi.com/enrich-lead?linkedin_url=${encodeURIComponent(linkedinUrl)}&include_skills=false`,
       { headers: { 'x-rapidapi-key': key, 'x-rapidapi-host': 'fresh-linkedin-profile-data.p.rapidapi.com' } }
     )
     if (!res.ok) return null
@@ -315,6 +317,7 @@ export async function fetchLinkedInProfile(linkedinUrl: string): Promise<LinkedI
     }
 
     const email = (p.email ?? p.work_email ?? (Array.isArray(p.emails) ? p.emails[0] : undefined)) as string | undefined
+    const phone = (p.phone ?? p.phone_number) as string | undefined
 
     return {
       first_name: first,
@@ -323,8 +326,10 @@ export async function fetchLinkedInProfile(linkedinUrl: string): Promise<LinkedI
       headline: p.headline as string | undefined,
       company: (p.company ?? p.company_name) as string | undefined,
       city,
+      state: p.state as string | undefined,
       country,
       email: typeof email === 'string' && email.includes('@') ? email : undefined,
+      phone: typeof phone === 'string' && phone.trim() ? phone : undefined,
       photo_url: (p.profile_pic_url ?? p.photo_url ?? p.profile_image_url) as string | undefined,
     }
   } catch {

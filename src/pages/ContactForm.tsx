@@ -121,8 +121,10 @@ export default function ContactForm({ contact, onClose, onSaved }: Props) {
       title: profile.title ?? profile.headline,
       company: profile.company,
       city: profile.city,
+      state: profile.state,
       country: profile.country,
       email: profile.email,
+      phone: profile.phone,
       avatar_url: profile.photo_url,
     })
     setFillStatus('filled')
