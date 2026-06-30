@@ -1,9 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Routes, Route } from 'react-router-dom'
+import { Routes, Route, Navigate } from 'react-router-dom'
 import { Loader2 } from 'lucide-react'
 import Sidebar from './components/Sidebar'
-import DashboardPage from './pages/DashboardPage'
-import TodayPage from './pages/TodayPage'
 import ContactsPage from './pages/ContactsPage'
 import ContactDetailPage from './pages/ContactDetailPage'
 import CalendarPage from './pages/CalendarPage'
@@ -192,14 +190,9 @@ function Workspace() {
           </div>
         )}
         <Routes>
-          <Route path="/" element={
-            <DashboardPage contacts={contacts} notes={notes} events={events} alerts={alerts} />
-          } />
+          <Route path="/" element={<Navigate to="/contacts" replace />} />
           <Route path="/contacts" element={
             <ContactsPage contacts={contacts} onContactsChange={reloadAll} />
-          } />
-          <Route path="/today" element={
-            <TodayPage contacts={contacts} notes={notes} alerts={alerts} />
           } />
           <Route path="/contacts/:id" element={
             <ContactDetailPage onContactsChange={reloadAll} />
