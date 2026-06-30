@@ -1,0 +1,9 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "rewrites": [
+    { "source": "/gdelt/:path*", "destination": "https://api.gdeltproject.org/api/v2/:path*" },
+    { "source": "/gnews/:path*", "destination": "https://news.google.com/:path*" },
+    { "source": "/yfinance/:path*", "destination": "https://query1.finance.yahoo.com/:path*" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}
