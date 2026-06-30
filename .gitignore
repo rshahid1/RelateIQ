@@ -1,6 +1,9 @@
 node_modules/
 dist/
 
+# Claude Code local settings (personal, per-machine)
+.claude/settings.local.json
+
 # Local env (keys) — never commit
 .env
 .env.*
