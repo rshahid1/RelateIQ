@@ -275,9 +275,11 @@ export interface LinkedInProfile {
   first_name?: string
   last_name?: string
   title?: string
+  headline?: string
   company?: string
   city?: string
   country?: string
+  email?: string
   photo_url?: string
 }
 
@@ -312,14 +314,18 @@ export async function fetchLinkedInProfile(linkedinUrl: string): Promise<LinkedI
       country = parts[parts.length - 1] || undefined
     }
 
+    const email = (p.email ?? p.work_email ?? (Array.isArray(p.emails) ? p.emails[0] : undefined)) as string | undefined
+
     return {
       first_name: first,
       last_name: last,
       title: (p.job_title ?? p.headline) as string | undefined,
-      company: p.company as string | undefined,
+      headline: p.headline as string | undefined,
+      company: (p.company ?? p.company_name) as string | undefined,
       city,
       country,
-      photo_url: (p.profile_pic_url ?? p.photo_url) as string | undefined,
+      email: typeof email === 'string' && email.includes('@') ? email : undefined,
+      photo_url: (p.profile_pic_url ?? p.photo_url ?? p.profile_image_url) as string | undefined,
     }
   } catch {
     return null

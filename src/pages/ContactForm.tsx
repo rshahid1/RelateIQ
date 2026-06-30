@@ -98,17 +98,17 @@ export default function ContactForm({ contact, onClose, onSaved }: Props) {
     }
   }
 
-  async function handleLinkedInBlur(url: string) {
+  async function lookupLinkedIn(url: string) {
     if (!url.includes('linkedin.com/in/')) return
 
-    // Free: parse name from the URL slug
+    // Free: parse the name from the URL slug right away
     const parsed = parseNameFromLinkedIn(url)
     if (parsed.first_name || parsed.last_name) {
       applyFill(parsed)
       setFillStatus('filled')
     }
 
-    // Paid upgrade: RapidAPI for full profile (title, company, city, photo)
+    // RapidAPI: pull the full profile (title, company, location, headline, photo, email-if-public)
     const rapidKey = localStorage.getItem('apikey_rapidapi')
     if (!rapidKey) return
     setFetching(true)
@@ -118,10 +118,11 @@ export default function ContactForm({ contact, onClose, onSaved }: Props) {
     applyFill({
       first_name: profile.first_name,
       last_name: profile.last_name,
-      title: profile.title,
+      title: profile.title ?? profile.headline,
       company: profile.company,
       city: profile.city,
       country: profile.country,
+      email: profile.email,
       avatar_url: profile.photo_url,
     })
     setFillStatus('filled')
@@ -178,27 +179,41 @@ export default function ContactForm({ contact, onClose, onSaved }: Props) {
         {/* LinkedIn — first so auto-fill populates fields below */}
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">LinkedIn URL</label>
-          <div className="relative">
-            <input
-              type="url"
-              className="input pr-9"
-              value={form.linkedin_url}
-              onChange={(e) => set('linkedin_url', e.target.value)}
-              onBlur={(e) => handleLinkedInBlur(e.target.value)}
-              placeholder="https://linkedin.com/in/…  — name auto-fills on paste"
-            />
-            {fetching && (
-              <Loader2 size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 animate-spin" />
-            )}
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <input
+                type="url"
+                className="input pr-9"
+                value={form.linkedin_url}
+                onChange={(e) => set('linkedin_url', e.target.value)}
+                onBlur={(e) => lookupLinkedIn(e.target.value)}
+                placeholder="https://linkedin.com/in/…"
+              />
+              {fetching && (
+                <Loader2 size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 animate-spin" />
+              )}
+            </div>
+            <button
+              type="button"
+              className="btn-ghost border border-gray-200 text-sm flex items-center gap-1.5 flex-shrink-0 disabled:opacity-50"
+              onClick={() => lookupLinkedIn(form.linkedin_url ?? '')}
+              disabled={fetching || !(form.linkedin_url ?? '').includes('linkedin.com/in/')}
+            >
+              {fetching ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} className="text-gold-500" />}
+              Look up
+            </button>
           </div>
           {fillStatus === 'filled' && (
             <p className="text-[11px] text-emerald-600 mt-1 flex items-center gap-1">
-              <Sparkles size={11} /> Auto-filled — review and adjust below.
+              <Sparkles size={11} /> Filled from LinkedIn — review and adjust below.
             </p>
           )}
           {fillStatus === 'error' && (
-            <p className="text-[11px] text-red-500 mt-1">Couldn't fetch full profile — fields filled from URL only.</p>
+            <p className="text-[11px] text-red-500 mt-1">Couldn't fetch the profile — check your RapidAPI key in Settings (filled name from the URL).</p>
           )}
+          <p className="text-[11px] text-gray-400 mt-1">
+            Pulls name, title, company, location & photo. Email usually isn't public on LinkedIn — add that manually.
+          </p>
         </div>
 
         <div className="grid grid-cols-2 gap-3">
