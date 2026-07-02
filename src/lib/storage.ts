@@ -27,8 +27,9 @@ function now() {
 
 /** Postgres date columns reject empty strings — turn '' into null. */
 function nullEmptyDates<T extends Record<string, unknown>>(obj: T): T {
+  const o = obj as Record<string, unknown>
   for (const f of ['birthday', 'last_contacted', 'event_date', 'meeting_date', 'date']) {
-    if (obj[f] === '') obj[f] = null as unknown as T[Extract<keyof T, string>]
+    if (o[f] === '') o[f] = null
   }
   return obj
 }
