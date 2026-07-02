@@ -72,6 +72,8 @@ export default function ContactForm({ contact, onClose, onSaved }: Props) {
   const [fillStatus, setFillStatus] = useState<'idle' | 'filled' | 'error'>('idle')
   const [showSigPaste, setShowSigPaste] = useState(false)
   const [sigText, setSigText] = useState('')
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
 
   function set(field: keyof FormData, value: string) {
     setForm((f) => ({ ...f, [field]: value }))
@@ -138,15 +140,22 @@ export default function ContactForm({ contact, onClose, onSaved }: Props) {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    const data = {
-      ...form,
-      tier: (form.tier || 'standard') as Contact['tier'],
-      ticker: form.ticker?.trim().toUpperCase() || undefined,
-      tags: form.tags.split(',').map((t) => t.trim()).filter(Boolean),
+    setSaveError(null)
+    setSaving(true)
+    try {
+      const data = {
+        ...form,
+        tier: (form.tier || 'standard') as Contact['tier'],
+        ticker: form.ticker?.trim().toUpperCase() || undefined,
+        tags: form.tags.split(',').map((t) => t.trim()).filter(Boolean),
+      }
+      if (contact) await updateContact(contact.id, data)
+      else await createContact(data)
+      onSaved()
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Could not save. Please try again.')
+      setSaving(false)
     }
-    if (contact) await updateContact(contact.id, data)
-    else await createContact(data)
-    onSaved()
   }
 
   return (
@@ -318,10 +327,16 @@ export default function ContactForm({ contact, onClose, onSaved }: Props) {
           />
         </div>
 
+        {saveError && (
+          <div className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2.5">
+            Couldn't save: {saveError}
+          </div>
+        )}
+
         <div className="flex justify-end gap-2 pt-2">
-          <button type="button" className="btn-ghost" onClick={onClose}>Cancel</button>
-          <button type="submit" className="btn-primary">
-            {contact ? 'Save changes' : 'Add contact'}
+          <button type="button" className="btn-ghost" onClick={onClose} disabled={saving}>Cancel</button>
+          <button type="submit" className="btn-primary disabled:opacity-60" disabled={saving}>
+            {saving ? 'Saving…' : contact ? 'Save changes' : 'Add contact'}
           </button>
         </div>
       </form>
