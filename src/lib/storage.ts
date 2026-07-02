@@ -28,7 +28,7 @@ function now() {
 // ── Contacts ──────────────────────────────────────────────────────────────────
 
 export async function getContacts(): Promise<Contact[]> {
-  const { data, error } = await supabase.from('contacts').select('*').order('created_at', { ascending: true })
+  const { data, error } = await supabase.from('contacts').select('*').order('created_at', { ascending: false })
   if (error) throw error
   return (data ?? []) as Contact[]
 }
