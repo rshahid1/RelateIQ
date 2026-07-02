@@ -25,6 +25,14 @@ function now() {
   return new Date().toISOString()
 }
 
+/** Postgres date columns reject empty strings — turn '' into null. */
+function nullEmptyDates<T extends Record<string, unknown>>(obj: T): T {
+  for (const f of ['birthday', 'last_contacted', 'event_date', 'meeting_date', 'date']) {
+    if (obj[f] === '') obj[f] = null as unknown as T[Extract<keyof T, string>]
+  }
+  return obj
+}
+
 // ── Contacts ──────────────────────────────────────────────────────────────────
 
 export async function getContacts(): Promise<Contact[]> {
@@ -42,7 +50,7 @@ export async function getContact(id: string): Promise<Contact | undefined> {
 export async function createContact(data: Omit<Contact, 'id' | 'created_at' | 'updated_at'>): Promise<Contact> {
   const { data: row, error } = await supabase
     .from('contacts')
-    .insert({ ...data, user_id: uid() })
+    .insert(nullEmptyDates({ ...data, user_id: uid() }))
     .select()
     .single()
   if (error) throw error
@@ -53,7 +61,7 @@ export async function updateContact(id: string, data: Partial<Contact>): Promise
   const { id: _i, user_id: _u, created_at: _c, ...patch } = data as Record<string, unknown>
   const { data: row, error } = await supabase
     .from('contacts')
-    .update({ ...patch, updated_at: now() })
+    .update(nullEmptyDates({ ...patch, updated_at: now() }))
     .eq('id', id)
     .select()
     .single()
