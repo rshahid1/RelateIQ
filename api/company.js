@@ -38,7 +38,7 @@ export default async function handler(req, res) {
       get('profile'),
       get('quote'),
       get('ratios-ttm'),
-      fetch(`${base}/earnings?symbol=${sym}&limit=8&apikey=${key}`, { signal: AbortSignal.timeout(10000) })
+      fetch(`${base}/earnings?symbol=${sym}&limit=5&apikey=${key}`, { signal: AbortSignal.timeout(10000) })
         .then((r) => r.json())
         .catch(() => null),
     ])
