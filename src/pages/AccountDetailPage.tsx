@@ -90,52 +90,136 @@ export default function AccountDetailPage({ contacts }: { contacts: Contact[] })
   const up = (stock?.changePercent ?? 0) >= 0
   const finSummary = ticker ? financialSummary(ticker, fin, stock) : null
 
+  const metrics: { label: string; value: string }[] = []
+  if (fin?.marketCap) metrics.push({ label: 'Market cap', value: fin.marketCap })
+  if (fin?.pe) metrics.push({ label: 'P/E', value: fin.pe })
+  if (fin?.eps) metrics.push({ label: 'EPS (ttm)', value: `$${fin.eps}` })
+  if (fin?.profitMargin) metrics.push({ label: 'Net margin', value: fin.profitMargin })
+  if (fin?.grossMargin) metrics.push({ label: 'Gross margin', value: fin.grossMargin })
+  if (stock?.low52 && stock?.high52) metrics.push({ label: '52-wk range', value: `${stock.low52.toFixed(0)}–${stock.high52.toFixed(0)}` })
+
   return (
     <div className="max-w-5xl">
       <Link to="/accounts" className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 mb-5">
         <ArrowLeft size={14} /> All accounts
       </Link>
 
-      {/* Header */}
+      {/* Header — identity + live price hero */}
       <div className="card mb-5">
-        <div className="flex items-start gap-4">
-          <div className="w-14 h-14 rounded-2xl bg-brand-50 text-brand-600 flex items-center justify-center flex-shrink-0">
-            <Building2 size={26} />
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-2xl font-bold text-gray-900">{company}</h1>
-              {ticker && <span className="badge bg-emerald-50 text-emerald-700">{ticker}</span>}
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div className="flex items-start gap-4 min-w-0">
+            <div className="w-14 h-14 rounded-2xl bg-brand-50 text-brand-600 flex items-center justify-center flex-shrink-0">
+              <Building2 size={26} />
             </div>
-            <div className="flex items-center gap-2 mt-2">
-              <div className="flex -space-x-2">
-                {accountContacts.slice(0, 6).map((c) => (
-                  <Link key={c.id} to={`/contacts/${c.id}`} title={`${c.first_name} ${c.last_name}`}>
-                    <Avatar name={`${c.first_name} ${c.last_name}`} url={c.avatar_url} size="sm" />
-                  </Link>
-                ))}
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h1 className="text-2xl font-bold text-gray-900">{company}</h1>
+                {ticker && <span className="badge bg-emerald-50 text-emerald-700">{ticker}</span>}
               </div>
-              <span className="text-xs text-gray-400">
-                {accountContacts.length} {accountContacts.length === 1 ? 'contact' : 'contacts'}
-              </span>
+              {fin?.industry && <p className="text-xs text-gray-400 mt-1">{fin.industry}</p>}
+              <div className="flex items-center gap-2 mt-2.5">
+                <div className="flex -space-x-2">
+                  {accountContacts.slice(0, 6).map((c) => (
+                    <Link key={c.id} to={`/contacts/${c.id}`} title={`${c.first_name} ${c.last_name}`}>
+                      <Avatar name={`${c.first_name} ${c.last_name}`} url={c.avatar_url} size="sm" />
+                    </Link>
+                  ))}
+                </div>
+                <span className="text-xs text-gray-400">
+                  {accountContacts.length} {accountContacts.length === 1 ? 'contact' : 'contacts'}
+                </span>
+              </div>
             </div>
           </div>
+
+          {/* Live price */}
+          {ticker && stock && (
+            <div className="flex items-center gap-3">
+              <div className="text-right">
+                <p className="text-2xl font-bold text-gray-900 leading-none">
+                  {stock.currency === 'USD' ? '$' : ''}{stock.price.toFixed(2)}
+                </p>
+                <p className={`text-sm font-medium mt-1 flex items-center justify-end gap-1 ${up ? 'text-emerald-600' : 'text-red-500'}`}>
+                  {up ? <TrendingUp size={13} /> : <TrendingDown size={13} />}
+                  {up ? '+' : ''}{stock.changePercent.toFixed(2)}%
+                </p>
+              </div>
+              <Sparkline data={stock.spark} up={up} />
+            </div>
+          )}
+          {ticker && !stock && (
+            <p className="text-sm text-gray-400 flex items-center gap-2"><Loader2 size={13} className="animate-spin" /> Loading price…</p>
+          )}
         </div>
       </div>
+
+      {/* Financials & earnings — one dedicated, organized section */}
+      {ticker && (
+        <div className="card mb-5">
+          <h2 className="font-semibold text-gray-900 flex items-center gap-2 mb-4">
+            <BarChart2 size={16} className="text-emerald-600" /> Financials &amp; earnings
+          </h2>
+
+          {metrics.length === 0 && !fin ? (
+            <p className="text-sm text-gray-400 flex items-center gap-2"><Loader2 size={13} className="animate-spin" /> Loading financials…</p>
+          ) : metrics.length === 0 ? (
+            <p className="text-sm text-gray-400">Financials unavailable — add your Financial Modeling Prep key in Settings.</p>
+          ) : (
+            <>
+              {/* Metric strip */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-y-4 gap-x-3">
+                {metrics.map((m) => <Metric key={m.label} label={m.label} value={m.value} />)}
+              </div>
+
+              {/* Earnings */}
+              {(fin?.lastEarnings || fin?.nextEarnings) && (
+                <div className="mt-5 pt-5 border-t border-gray-100 grid sm:grid-cols-2 gap-4">
+                  {fin?.lastEarnings && (
+                    <div className={`rounded-xl p-3.5 ${fin.lastEarnings.beat ? 'bg-emerald-50' : fin.lastEarnings.beat === false ? 'bg-amber-50' : 'bg-gray-50'}`}>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Latest earnings</p>
+                        {fin.lastEarnings.beat != null && (
+                          <span className={`badge ${fin.lastEarnings.beat ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                            {fin.lastEarnings.beat ? 'Beat' : 'Missed'}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-sm font-semibold text-gray-900">
+                        EPS ${fin.lastEarnings.epsActual}
+                        {fin.lastEarnings.epsEstimated != null && (
+                          <span className="font-normal text-gray-500"> vs ${fin.lastEarnings.epsEstimated} est</span>
+                        )}
+                      </p>
+                      {fin.lastEarnings.revenue && (
+                        <p className="text-sm text-gray-600 mt-0.5">Revenue {fin.lastEarnings.revenue}</p>
+                      )}
+                      <p className="text-[11px] text-gray-400 mt-1.5">Reported {fin.lastEarnings.date}</p>
+                    </div>
+                  )}
+                  {fin?.nextEarnings && (
+                    <div className="rounded-xl p-3.5 bg-sky-50">
+                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Next earnings</p>
+                      <p className="text-sm font-semibold text-sky-700 flex items-center gap-1.5">
+                        <CalendarClock size={14} /> {fin.nextEarnings}
+                      </p>
+                      <p className="text-[11px] text-gray-400 mt-1.5">A natural window to check in ahead of the print.</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Plain-language recap */}
+              {finSummary && (
+                <p className="text-sm text-gray-600 leading-relaxed mt-5 pt-4 border-t border-gray-100">{finSummary}</p>
+              )}
+            </>
+          )}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         {/* Left: brief + news */}
         <div className="lg:col-span-2 space-y-5">
-          {/* Financials & earnings summary (public companies) */}
-          {finSummary && (
-            <div className="card bg-emerald-50/40 border-emerald-100">
-              <h2 className="font-semibold text-gray-900 flex items-center gap-2 mb-2">
-                <BarChart2 size={16} className="text-emerald-600" /> Financials &amp; earnings
-              </h2>
-              <p className="text-sm text-gray-700 leading-relaxed">{finSummary}</p>
-            </div>
-          )}
-
           {/* AI account brief */}
           <div className="card">
             <h2 className="font-semibold text-gray-900 flex items-center gap-2 mb-3">
@@ -173,69 +257,8 @@ export default function AccountDetailPage({ contacts }: { contacts: Contact[] })
           </div>
         </div>
 
-        {/* Right: financials + contacts */}
+        {/* Right: contacts */}
         <div className="space-y-5">
-          {/* Stock / financials */}
-          {ticker && (
-            <div className="card">
-              <h2 className="font-semibold text-gray-900 flex items-center gap-2 mb-3">
-                <BarChart2 size={16} className="text-brand-500" /> {ticker}
-              </h2>
-              {stock ? (
-                <>
-                  <div className="flex items-end justify-between gap-2">
-                    <div>
-                      <p className="text-2xl font-bold text-gray-900 leading-none">
-                        {stock.currency === 'USD' ? '$' : ''}{stock.price.toFixed(2)}
-                      </p>
-                      <p className={`text-sm font-medium mt-1 flex items-center gap-1 ${up ? 'text-emerald-600' : 'text-red-500'}`}>
-                        {up ? <TrendingUp size={13} /> : <TrendingDown size={13} />}
-                        {up ? '+' : ''}{stock.changePercent.toFixed(2)}%
-                      </p>
-                    </div>
-                    <Sparkline data={stock.spark} up={up} />
-                  </div>
-                  {(stock.low52 || stock.high52) && (
-                    <p className="text-[11px] text-gray-400 mt-2">
-                      52-wk: {stock.low52?.toFixed(0)} – {stock.high52?.toFixed(0)}
-                    </p>
-                  )}
-                </>
-              ) : (
-                <p className="text-sm text-gray-400 flex items-center gap-2"><Loader2 size={13} className="animate-spin" /> Loading price…</p>
-              )}
-
-              {fin && (fin.marketCap || fin.pe || fin.eps || fin.profitMargin || fin.industry) && (
-                <div className="mt-4 pt-4 border-t border-gray-100 grid grid-cols-2 gap-x-4 gap-y-2.5">
-                  {fin.marketCap && <Stat label="Market cap" value={fin.marketCap} />}
-                  {fin.pe && <Stat label="P/E" value={fin.pe} />}
-                  {fin.eps && <Stat label="EPS (ttm)" value={`$${fin.eps}`} />}
-                  {fin.profitMargin && <Stat label="Net margin" value={fin.profitMargin} />}
-                  {fin.industry && <Stat label="Industry" value={fin.industry} />}
-                </div>
-              )}
-              {fin?.lastEarnings && (
-                <div className={`mt-3 rounded-xl px-3 py-2 text-xs ${fin.lastEarnings.beat ? 'bg-emerald-50 text-emerald-700' : fin.lastEarnings.beat === false ? 'bg-amber-50 text-amber-700' : 'bg-gray-50 text-gray-600'}`}>
-                  <p className="font-medium mb-0.5">
-                    Last earnings ({fin.lastEarnings.date})
-                    {fin.lastEarnings.beat != null && ` · ${fin.lastEarnings.beat ? 'Beat' : 'Missed'} estimates`}
-                  </p>
-                  <p>
-                    {fin.lastEarnings.epsActual != null && `EPS $${fin.lastEarnings.epsActual}`}
-                    {fin.lastEarnings.epsEstimated != null && ` vs $${fin.lastEarnings.epsEstimated} est`}
-                    {fin.lastEarnings.revenue && ` · Revenue ${fin.lastEarnings.revenue}`}
-                  </p>
-                </div>
-              )}
-              {fin?.nextEarnings && (
-                <p className="text-xs text-sky-600 mt-3 flex items-center gap-1.5">
-                  <CalendarClock size={12} /> Next earnings: {fin.nextEarnings}
-                </p>
-              )}
-            </div>
-          )}
-
-          {/* Contacts */}
           <div className="card">
             <h2 className="font-semibold text-gray-900 flex items-center gap-2 mb-3">
               <Users size={16} className="text-brand-500" /> Contacts
@@ -260,11 +283,11 @@ export default function AccountDetailPage({ contacts }: { contacts: Contact[] })
   )
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Metric({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <p className="text-[11px] text-gray-400">{label}</p>
-      <p className="text-sm font-medium text-gray-900 capitalize">{value}</p>
+      <p className="text-[11px] text-gray-400 uppercase tracking-wide">{label}</p>
+      <p className="text-base font-semibold text-gray-900 mt-0.5">{value}</p>
     </div>
   )
 }
