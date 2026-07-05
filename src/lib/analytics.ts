@@ -320,10 +320,17 @@ export async function filterRelevantHeadlines(
   if (!key || headlines.length <= 2) return headlines
 
   const list = headlines.map((h, i) => `${i}. ${h.title}${h.source ? ` — ${h.source}` : ''}`).join('\n')
-  const who = [ctx.hint && `industry: ${ctx.hint}`, ctx.title && `contact's role: ${ctx.title}`]
+  const who = [ctx.hint && `industry/context: ${ctx.hint}`, ctx.title && `a contact there is a "${ctx.title}"`]
     .filter(Boolean)
     .join('; ')
-  const prompt = `I follow the company "${ctx.company}"${who ? ` (${who})` : ''}. Company names are often ambiguous acronyms. From the numbered headlines below, return ONLY the numbers of the ones genuinely about THIS company (the same organization/industry). Exclude unrelated uses of the name. Respond with a JSON array of numbers only, e.g. [0,3,4].\n\n${list}`
+  const prompt = `I'm an account manager tracking the company "${ctx.company}"${who ? ` (${who})` : ''}. Short company names are often ambiguous — e.g. "WCF" could be an insurer, a curling federation, or a software framework.
+
+Step 1: infer this specific company's likely industry from the context above.
+Step 2: from the numbered headlines below, keep ONLY the ones clearly about THIS organization in that industry. Be strict: if a headline is plausibly a different entity that shares the name/acronym, EXCLUDE it. Generic mentions that aren't about the company as an organization should also be excluded.
+
+Respond with ONLY a JSON array of the kept numbers (e.g. [0,3,4]); use [] if none clearly match.
+
+${list}`
 
   try {
     const res = await fetch('https://api.anthropic.com/v1/messages', {

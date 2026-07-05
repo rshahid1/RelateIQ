@@ -18,6 +18,38 @@ export default function SettingsPage() {
   })
   const [aiModel, setAiModelState] = useState(getAiModel)
   const [saved, setSaved] = useState(false)
+  const [testingKey, setTestingKey] = useState(false)
+  const [keyTest, setKeyTest] = useState<{ ok: boolean; msg: string } | null>(null)
+
+  async function testAnthropicKey() {
+    setTestingKey(true)
+    setKeyTest(null)
+    try {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'anthropic-version': '2023-06-01',
+          'x-api-key': keys.anthropic.trim(),
+          'anthropic-dangerous-direct-browser-access': 'true',
+        },
+        body: JSON.stringify({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 5,
+          messages: [{ role: 'user', content: 'hi' }],
+        }),
+      })
+      if (res.ok) {
+        setKeyTest({ ok: true, msg: 'Working — your key is valid and funded.' })
+      } else {
+        const data = await res.json().catch(() => null)
+        setKeyTest({ ok: false, msg: data?.error?.message || `Request failed (HTTP ${res.status}).` })
+      }
+    } catch (e) {
+      setKeyTest({ ok: false, msg: e instanceof Error ? e.message : 'Could not reach Anthropic.' })
+    }
+    setTestingKey(false)
+  }
 
   function handleSave(e: React.FormEvent) {
     e.preventDefault()
@@ -161,7 +193,20 @@ export default function SettingsPage() {
               value={keys.anthropic}
               onChange={(e) => setKeys((k) => ({ ...k, anthropic: e.target.value }))}
             />
+            <button
+              type="button"
+              onClick={testAnthropicKey}
+              disabled={testingKey || !keys.anthropic.trim()}
+              className="btn-ghost text-sm border border-gray-200 flex-shrink-0 disabled:opacity-50"
+            >
+              {testingKey ? 'Testing…' : 'Test'}
+            </button>
           </div>
+          {keyTest && (
+            <p className={`text-xs mt-2 ${keyTest.ok ? 'text-emerald-600' : 'text-red-600'}`}>
+              {keyTest.ok ? '✓ ' : '✕ '}{keyTest.msg}
+            </p>
+          )}
 
           {/* Model picker */}
           <div className="mt-4 pt-4 border-t border-gray-100">
