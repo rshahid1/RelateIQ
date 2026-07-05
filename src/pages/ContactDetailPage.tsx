@@ -514,14 +514,14 @@ function formatNewsDate(dateStr: string): string {
 
 function NewsItem({ headline }: { headline: CompanyHeadline }) {
   const [summary, setSummary] = useState<string | null>(null)
-  const [status, setStatus] = useState<'idle' | 'loading' | 'done' | 'none'>('idle')
+  const [status, setStatus] = useState<'idle' | 'loading' | 'done' | 'none' | 'nokey'>('idle')
   const [open, setOpen] = useState(false)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   function loadSummary() {
     if (status !== 'idle') return // cached after first hover
     const key = localStorage.getItem('apikey_anthropic')
-    if (!key) { setStatus('none'); return }
+    if (!key) { setStatus('nokey'); return }
     setStatus('loading')
     fetch(`/api/summarize?url=${encodeURIComponent(headline.url)}`, {
       headers: { 'x-anthropic-key': key },
@@ -529,6 +529,7 @@ function NewsItem({ headline }: { headline: CompanyHeadline }) {
       .then((r) => r.json())
       .then((d) => {
         if (d.summary) { setSummary(d.summary); setStatus('done') }
+        else if (d.error === 'NO_KEY') setStatus('nokey')
         else setStatus('none')
       })
       .catch(() => setStatus('none'))
@@ -570,8 +571,11 @@ function NewsItem({ headline }: { headline: CompanyHeadline }) {
             </span>
           )}
           {status === 'done' && <p className="text-xs text-gray-600 leading-relaxed">{summary}</p>}
+          {status === 'nokey' && (
+            <p className="text-xs text-amber-700">Add your Anthropic key in Settings to turn on summaries.</p>
+          )}
           {status === 'none' && (
-            <p className="text-xs text-gray-400">Couldn't summarize this one — click through to read it.</p>
+            <p className="text-xs text-gray-400">Couldn't read this article — click through to open it.</p>
           )}
         </div>
       )}
