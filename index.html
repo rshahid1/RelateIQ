@@ -11,6 +11,24 @@
       rel="stylesheet"
     />
     <title>RelateIQ — Relationship Intelligence</title>
+    <script>
+      // Self-heal: remove any stale service worker / cache from earlier versions
+      // so deploys always take effect without manual cache-clearing.
+      (function () {
+        try {
+          if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.getRegistrations().then(function (rs) {
+              rs.forEach(function (r) { r.unregister(); });
+            });
+          }
+          if (window.caches && caches.keys) {
+            caches.keys().then(function (keys) {
+              keys.forEach(function (k) { caches.delete(k); });
+            });
+          }
+        } catch (e) { /* no-op */ }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
