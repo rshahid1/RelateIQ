@@ -298,7 +298,15 @@ export function parseCSVContacts(csv: string): Partial<ImportedContact>[] {
 
 export function parseXLSXContacts(buffer: ArrayBuffer): Partial<ImportedContact>[] {
   const workbook = XLSX.read(buffer, { type: 'array' })
-  const sheet = workbook.Sheets[workbook.SheetNames[0]]
-  const csv = XLSX.utils.sheet_to_csv(sheet)
-  return parseCSVContacts(csv)
+  // Pull contacts from every sheet/tab, not just the first. Each sheet is parsed
+  // independently (its own header row) and the results are combined.
+  const all: Partial<ImportedContact>[] = []
+  for (const name of workbook.SheetNames) {
+    const sheet = workbook.Sheets[name]
+    if (!sheet) continue
+    const csv = XLSX.utils.sheet_to_csv(sheet)
+    if (!csv.trim()) continue
+    all.push(...parseCSVContacts(csv))
+  }
+  return all
 }
