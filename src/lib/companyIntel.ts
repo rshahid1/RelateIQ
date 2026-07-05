@@ -75,6 +75,47 @@ export async function fetchCompanyFinancials(ticker: string): Promise<CompanyFin
   }
 }
 
+const joinList = (parts: string[]): string =>
+  parts.length <= 1 ? parts.join('') : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`
+
+/**
+ * Plain-language financials + earnings summary, built deterministically from the
+ * FMP data + live price. Always available for public companies (no AI needed),
+ * so the one-pager has substance even when there's little news.
+ */
+export function financialSummary(
+  ticker: string,
+  fin: CompanyFinancials | null,
+  stock: StockSnapshot | null
+): string | null {
+  if (!fin && !stock) return null
+  const out: string[] = []
+
+  const val: string[] = []
+  if (fin?.marketCap) val.push(`a market cap of ${fin.marketCap}`)
+  if (fin?.pe) val.push(`a P/E of ${fin.pe}`)
+  if (fin?.profitMargin) val.push(`a ${fin.profitMargin} net margin`)
+  if (val.length) out.push(`${ticker} carries ${joinList(val)}.`)
+
+  if (stock) {
+    const dir = stock.changePercent >= 0 ? 'up' : 'down'
+    let p = `Shares trade near ${stock.currency === 'USD' ? '$' : ''}${stock.price.toFixed(2)}, ${dir} ${Math.abs(stock.changePercent).toFixed(1)}% recently`
+    if (stock.low52 && stock.high52) p += ` (52-week range ${stock.low52.toFixed(0)}–${stock.high52.toFixed(0)})`
+    out.push(p + '.')
+  }
+
+  if (fin?.lastEarnings) {
+    const e = fin.lastEarnings
+    let p = `In its most recent report (${e.date}), it posted EPS of $${e.epsActual}`
+    if (e.epsEstimated != null) p += `, ${e.beat ? 'beating' : 'missing'} the $${e.epsEstimated} estimate`
+    if (e.revenue) p += `, on revenue of ${e.revenue}`
+    out.push(p + '.')
+  }
+  if (fin?.nextEarnings) out.push(`Its next earnings report is expected around ${fin.nextEarnings}.`)
+
+  return out.length ? out.join(' ') : null
+}
+
 /**
  * AI account brief — reads the (already relevance-filtered) recent news and
  * writes a tight "what they've been up to + why it matters + a natural reason to

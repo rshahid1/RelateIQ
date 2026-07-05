@@ -7,7 +7,7 @@ import {
 import { Contact } from '../types'
 import { fetchCompanyHeadlines, filterRelevantHeadlines, CompanyHeadline } from '../lib/analytics'
 import {
-  fetchStockSnapshot, fetchCompanyFinancials, generateAccountBrief,
+  fetchStockSnapshot, fetchCompanyFinancials, generateAccountBrief, financialSummary,
   StockSnapshot, CompanyFinancials,
 } from '../lib/companyIntel'
 import Avatar from '../components/Avatar'
@@ -88,6 +88,7 @@ export default function AccountDetailPage({ contacts }: { contacts: Contact[] })
   }
 
   const up = (stock?.changePercent ?? 0) >= 0
+  const finSummary = ticker ? financialSummary(ticker, fin, stock) : null
 
   return (
     <div className="max-w-5xl">
@@ -125,6 +126,16 @@ export default function AccountDetailPage({ contacts }: { contacts: Contact[] })
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         {/* Left: brief + news */}
         <div className="lg:col-span-2 space-y-5">
+          {/* Financials & earnings summary (public companies) */}
+          {finSummary && (
+            <div className="card bg-emerald-50/40 border-emerald-100">
+              <h2 className="font-semibold text-gray-900 flex items-center gap-2 mb-2">
+                <BarChart2 size={16} className="text-emerald-600" /> Financials &amp; earnings
+              </h2>
+              <p className="text-sm text-gray-700 leading-relaxed">{finSummary}</p>
+            </div>
+          )}
+
           {/* AI account brief */}
           <div className="card">
             <h2 className="font-semibold text-gray-900 flex items-center gap-2 mb-3">
