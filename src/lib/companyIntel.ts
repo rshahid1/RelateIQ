@@ -37,15 +37,27 @@ export async function fetchStockSnapshot(ticker: string): Promise<StockSnapshot 
   }
 }
 
+export interface LastEarnings {
+  date: string
+  epsActual: number | null
+  epsEstimated: number | null
+  revenue: string | null
+  beat: boolean | null
+  note: string
+}
+
 export interface CompanyFinancials {
   name?: string
   industry?: string | null
   marketCap?: string | null
   pe?: string | null
   eps?: string | null
+  profitMargin?: string | null
+  grossMargin?: string | null
   week52High?: number | string | null
   week52Low?: number | string | null
   nextEarnings?: string | null
+  lastEarnings?: LastEarnings | null
 }
 
 /** Fundamentals via the /api/company backend (Financial Modeling Prep). Null when unavailable. */
@@ -85,8 +97,8 @@ export async function generateAccountBrief(
 ## A natural reason to reach out
 (1 bullet: a specific, non-salesy opener tied to a real signal)
 
-Be signal-only — skip anything trivial. Don't invent facts.
-${stockNote ? `\nStock: ${stockNote}` : ''}
+Be signal-only — skip anything trivial. Don't invent facts. If the financial context below is relevant, weave it in naturally (e.g. an earnings beat/miss is a great reason to reach out).
+${stockNote ? `\nFinancial context: ${stockNote}` : ''}
 
 Recent news:
 ${news}`

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import {
   ArrowLeft, Building2, TrendingUp, TrendingDown, Newspaper, Sparkles,
@@ -32,6 +32,12 @@ export default function AccountDetailPage({ contacts }: { contacts: Contact[] })
   const [brief, setBrief] = useState<string | null>(null)
   const [briefStatus, setBriefStatus] = useState<'idle' | 'loading' | 'done' | 'nokey' | 'none'>('idle')
 
+  // Latest stock/financials, readable inside the brief builder without re-triggering it
+  const stockRef = useRef(stock)
+  const finRef = useRef(fin)
+  stockRef.current = stock
+  finRef.current = fin
+
   useEffect(() => {
     if (!ticker) { setStock(null); setFin(null); return }
     let active = true
@@ -55,9 +61,15 @@ export default function AccountDetailPage({ contacts }: { contacts: Contact[] })
         if (top.length === 0) { setBriefStatus('none'); return }
         if (!localStorage.getItem('apikey_anthropic')) { setBriefStatus('nokey'); return }
         setBriefStatus('loading')
-        const note = stock
-          ? `${ticker} ${stock.changePercent >= 0 ? 'up' : 'down'} ${Math.abs(stock.changePercent).toFixed(1)}% recently`
-          : undefined
+        const s = stockRef.current
+        const f = finRef.current
+        const parts: string[] = []
+        if (s) parts.push(`${ticker} ${s.changePercent >= 0 ? 'up' : 'down'} ${Math.abs(s.changePercent).toFixed(1)}% recently`)
+        if (f?.marketCap) parts.push(`market cap ${f.marketCap}`)
+        if (f?.profitMargin) parts.push(`net margin ${f.profitMargin}`)
+        if (f?.lastEarnings?.note) parts.push(`most recent earnings — ${f.lastEarnings.note}`)
+        if (f?.nextEarnings) parts.push(`next earnings due ${f.nextEarnings}`)
+        const note = parts.length ? parts.join('; ') : undefined
         const b = await generateAccountBrief(company, top, note)
         if (active) { setBrief(b); setBriefStatus(b ? 'done' : 'none') }
       })
@@ -182,12 +194,26 @@ export default function AccountDetailPage({ contacts }: { contacts: Contact[] })
                 <p className="text-sm text-gray-400 flex items-center gap-2"><Loader2 size={13} className="animate-spin" /> Loading price…</p>
               )}
 
-              {fin && (fin.marketCap || fin.pe || fin.eps || fin.industry) && (
+              {fin && (fin.marketCap || fin.pe || fin.eps || fin.profitMargin || fin.industry) && (
                 <div className="mt-4 pt-4 border-t border-gray-100 grid grid-cols-2 gap-x-4 gap-y-2.5">
                   {fin.marketCap && <Stat label="Market cap" value={fin.marketCap} />}
                   {fin.pe && <Stat label="P/E" value={fin.pe} />}
-                  {fin.eps && <Stat label="EPS" value={`$${fin.eps}`} />}
+                  {fin.eps && <Stat label="EPS (ttm)" value={`$${fin.eps}`} />}
+                  {fin.profitMargin && <Stat label="Net margin" value={fin.profitMargin} />}
                   {fin.industry && <Stat label="Industry" value={fin.industry} />}
+                </div>
+              )}
+              {fin?.lastEarnings && (
+                <div className={`mt-3 rounded-xl px-3 py-2 text-xs ${fin.lastEarnings.beat ? 'bg-emerald-50 text-emerald-700' : fin.lastEarnings.beat === false ? 'bg-amber-50 text-amber-700' : 'bg-gray-50 text-gray-600'}`}>
+                  <p className="font-medium mb-0.5">
+                    Last earnings ({fin.lastEarnings.date})
+                    {fin.lastEarnings.beat != null && ` · ${fin.lastEarnings.beat ? 'Beat' : 'Missed'} estimates`}
+                  </p>
+                  <p>
+                    {fin.lastEarnings.epsActual != null && `EPS $${fin.lastEarnings.epsActual}`}
+                    {fin.lastEarnings.epsEstimated != null && ` vs $${fin.lastEarnings.epsEstimated} est`}
+                    {fin.lastEarnings.revenue && ` · Revenue ${fin.lastEarnings.revenue}`}
+                  </p>
                 </div>
               )}
               {fin?.nextEarnings && (
