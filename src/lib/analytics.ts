@@ -13,6 +13,17 @@ function uuid() {
   return crypto.randomUUID()
 }
 
+/** fetch that aborts after `ms` so a stalled proxy can't hang the UI forever. */
+async function fetchWithTimeout(url: string, ms = 8000, opts?: RequestInit): Promise<Response> {
+  const ctrl = new AbortController()
+  const t = setTimeout(() => ctrl.abort(), ms)
+  try {
+    return await fetch(url, { ...opts, signal: ctrl.signal })
+  } finally {
+    clearTimeout(t)
+  }
+}
+
 function apiKey(name: 'newsapi' | 'rapidapi'): string {
   return (
     localStorage.getItem(`apikey_${name}`) ||
@@ -211,9 +222,14 @@ export interface CompanyHeadline {
 }
 
 async function newsViaGoogleRss(company: string): Promise<CompanyHeadline[]> {
-  const res = await fetch(
-    `/gnews/rss/search?q=${encodeURIComponent(`"${company}"`)}&hl=en-US&gl=US&ceid=US:en`
-  )
+  let res: Response
+  try {
+    res = await fetchWithTimeout(
+      `/gnews/rss/search?q=${encodeURIComponent(`"${company}"`)}&hl=en-US&gl=US&ceid=US:en`
+    )
+  } catch {
+    return []
+  }
   if (!res.ok) return []
   const text = await res.text()
   const doc = new DOMParser().parseFromString(text, 'text/xml')
@@ -254,7 +270,7 @@ export async function fetchCompanyHeadlines(company: string): Promise<CompanyHea
     if (googleResults.length > 0) return googleResults
 
     // GDELT as last resort
-    const res = await fetch(
+    const res = await fetchWithTimeout(
       `/gdelt/doc/doc?query=${encodeURIComponent(`"${company}"`)}&mode=artlist&maxrecords=5&format=json&timespan=90d&sort=datedesc`
     )
     if (!res.ok) return []

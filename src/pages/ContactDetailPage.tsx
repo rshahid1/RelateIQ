@@ -513,9 +513,9 @@ function CompanyNewsSidebar({ company, contactFirstName }: { company: string; co
   useEffect(() => {
     let active = true
     setLoading(true)
-    fetchCompanyHeadlines(company).then((items) => {
-      if (active) { setHeadlines(items); setLoading(false) }
-    })
+    fetchCompanyHeadlines(company)
+      .then((items) => { if (active) { setHeadlines(items); setLoading(false) } })
+      .catch(() => { if (active) { setHeadlines([]); setLoading(false) } })
     return () => { active = false }
   }, [company])
 
