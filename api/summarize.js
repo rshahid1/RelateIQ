@@ -1,12 +1,15 @@
 /**
  * Vercel serverless function — summarize a news article by URL.
  *
- * Runs on Vercel's backend so it can fetch the article without the browser's
- * CORS limits, then asks Claude Haiku for a short summary. The caller passes
- * their own Anthropic key via the `x-anthropic-key` header (never stored).
- * Always responds 200 with { summary, error } so the client can fall back
- * gracefully to the headline.
+ * Reads the article server-side (no browser CORS), then asks Claude Haiku for a
+ * short summary. Tries a direct fetch first (fast, works for most major outlets);
+ * if that comes back thin/blocked, falls back to a reader service that renders
+ * the page and gets through more bot blocks. The caller passes their own
+ * Anthropic key via `x-anthropic-key` (never stored). Always 200 with
+ * { summary, error } so the client can fall back to the headline.
  */
+
+export const config = { maxDuration: 30 }
 
 function extractText(html) {
   return html
@@ -21,6 +24,44 @@ function extractText(html) {
     .trim()
 }
 
+async function readArticle(url) {
+  // 1) Direct fetch — fast, works for most major outlets
+  try {
+    const r = await fetch(url, {
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36',
+        Accept: 'text/html',
+      },
+      redirect: 'follow',
+      signal: AbortSignal.timeout(7000),
+    })
+    const text = extractText(await r.text())
+    if (text.length >= 250) return text.slice(0, 6000)
+  } catch {
+    /* fall through to reader */
+  }
+
+  // 2) Reader-service fallback — renders JS / gets through many bot blocks
+  try {
+    const r = await fetch(`https://r.jina.ai/${url}`, {
+      headers: { 'X-Return-Format': 'text' },
+      signal: AbortSignal.timeout(15000),
+    })
+    if (r.ok) {
+      const text = (await r.text())
+        .replace(/[ \t]+/g, ' ')
+        .replace(/\n\s*\n+/g, '\n')
+        .trim()
+      if (text.length >= 250) return text.slice(0, 6000)
+    }
+  } catch {
+    /* give up */
+  }
+
+  return null
+}
+
 export default async function handler(req, res) {
   const url = req.query?.url
   const key = req.headers['x-anthropic-key']
@@ -33,18 +74,8 @@ export default async function handler(req, res) {
   }
 
   try {
-    const article = await fetch(url, {
-      headers: {
-        'User-Agent':
-          'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36',
-        Accept: 'text/html',
-      },
-      redirect: 'follow',
-      signal: AbortSignal.timeout(9000),
-    })
-    const html = await article.text()
-    const text = extractText(html).slice(0, 6000)
-    if (text.length < 250) {
+    const text = await readArticle(url)
+    if (!text) {
       return res.status(200).json({ summary: null, error: 'NO_CONTENT' })
     }
 
@@ -65,7 +96,7 @@ export default async function handler(req, res) {
           },
         ],
       }),
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(12000),
     })
     if (!claude.ok) {
       return res.status(200).json({ summary: null, error: 'AI_FAILED' })
