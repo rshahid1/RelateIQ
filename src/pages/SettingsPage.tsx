@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { KeyRound, CloudRain, Newspaper, Linkedin, Save, CheckCircle2, Chrome, Sparkles } from 'lucide-react'
+import { KeyRound, CloudRain, Newspaper, Linkedin, Save, CheckCircle2, Chrome, Sparkles, LineChart } from 'lucide-react'
 import { getGoogleClientId, setGoogleClientId } from '../lib/google'
 import { AI_MODELS, getAiModel, setAiModel } from '../lib/ai'
 
@@ -7,6 +7,7 @@ interface ApiKeys {
   newsapi: string
   rapidapi: string
   anthropic: string
+  fmp: string
 }
 
 export default function SettingsPage() {
@@ -15,6 +16,7 @@ export default function SettingsPage() {
     newsapi: localStorage.getItem('apikey_newsapi') ?? '',
     rapidapi: localStorage.getItem('apikey_rapidapi') ?? '',
     anthropic: localStorage.getItem('apikey_anthropic') ?? '',
+    fmp: localStorage.getItem('apikey_fmp') ?? '',
   })
   const [aiModel, setAiModelState] = useState(getAiModel)
   const [saved, setSaved] = useState(false)
@@ -60,6 +62,8 @@ export default function SettingsPage() {
     else localStorage.removeItem('apikey_rapidapi')
     if (keys.anthropic) localStorage.setItem('apikey_anthropic', keys.anthropic)
     else localStorage.removeItem('apikey_anthropic')
+    if (keys.fmp) localStorage.setItem('apikey_fmp', keys.fmp.trim())
+    else localStorage.removeItem('apikey_fmp')
     setAiModel(aiModel)
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
@@ -167,6 +171,33 @@ export default function SettingsPage() {
           <p className="text-xs text-gray-400 mt-2">
             Used for: <span className="font-medium">Fresh LinkedIn Data API</span> (job changes) · <span className="font-medium">Real-Time Events Search API</span> (concerts, sports, conferences)
           </p>
+        </div>
+
+        {/* Financial Modeling Prep — account financials */}
+        <div className="card">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="bg-emerald-50 rounded-xl p-2">
+              <LineChart size={16} className="text-emerald-600" />
+            </div>
+            <div>
+              <p className="font-semibold text-sm text-gray-900 flex items-center gap-2">
+                Financial data
+                {keys.fmp && <span className="badge bg-emerald-100 text-emerald-700">Connected</span>}
+              </p>
+              <p className="text-xs text-gray-500">Market cap, P/E, EPS &amp; earnings on the Accounts one-pager (Financial Modeling Prep).</p>
+            </div>
+            <a href="https://site.financialmodelingprep.com/register" target="_blank" rel="noopener noreferrer" className="ml-auto text-xs text-brand-500 hover:underline whitespace-nowrap">Get free key →</a>
+          </div>
+          <div className="flex items-center gap-2">
+            <KeyRound size={13} className="text-gray-400 flex-shrink-0" />
+            <input
+              className="input"
+              type="password"
+              placeholder="Optional — FMP API key"
+              value={keys.fmp}
+              onChange={(e) => setKeys((k) => ({ ...k, fmp: e.target.value }))}
+            />
+          </div>
         </div>
 
         {/* Anthropic — voice note summarization */}

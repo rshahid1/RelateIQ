@@ -182,15 +182,12 @@ export default function AccountDetailPage({ contacts }: { contacts: Contact[] })
                 <p className="text-sm text-gray-400 flex items-center gap-2"><Loader2 size={13} className="animate-spin" /> Loading price…</p>
               )}
 
-              {fin && (
+              {fin && (fin.marketCap || fin.pe || fin.eps || fin.industry) && (
                 <div className="mt-4 pt-4 border-t border-gray-100 grid grid-cols-2 gap-x-4 gap-y-2.5">
                   {fin.marketCap && <Stat label="Market cap" value={fin.marketCap} />}
                   {fin.pe && <Stat label="P/E" value={fin.pe} />}
-                  {fin.revenue && <Stat label="Revenue" value={fin.revenue} />}
-                  {fin.revenueGrowth != null && <Stat label="Rev. growth" value={`${fin.revenueGrowth}%`} />}
-                  {fin.profitMargin != null && <Stat label="Margin" value={`${fin.profitMargin}%`} />}
-                  {fin.targetPrice && <Stat label="Avg target" value={fin.targetPrice} />}
-                  {fin.recommendation && <Stat label="Analysts" value={fin.recommendation.replace(/_/g, ' ')} />}
+                  {fin.eps && <Stat label="EPS" value={`$${fin.eps}`} />}
+                  {fin.industry && <Stat label="Industry" value={fin.industry} />}
                 </div>
               )}
               {fin?.nextEarnings && (

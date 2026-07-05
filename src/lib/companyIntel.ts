@@ -39,22 +39,22 @@ export async function fetchStockSnapshot(ticker: string): Promise<StockSnapshot 
 
 export interface CompanyFinancials {
   name?: string
+  industry?: string | null
   marketCap?: string | null
   pe?: string | null
-  revenue?: string | null
-  revenueGrowth?: number | null
-  profitMargin?: number | null
-  recommendation?: string | null
-  targetPrice?: string | null
-  week52High?: string | null
-  week52Low?: string | null
+  eps?: string | null
+  week52High?: number | string | null
+  week52Low?: number | string | null
   nextEarnings?: string | null
 }
 
-/** Fundamentals via the /api/company backend (Yahoo crumb). Null when unavailable. */
+/** Fundamentals via the /api/company backend (Financial Modeling Prep). Null when unavailable. */
 export async function fetchCompanyFinancials(ticker: string): Promise<CompanyFinancials | null> {
   try {
-    const res = await fetch(`/api/company?ticker=${encodeURIComponent(ticker)}`)
+    const key = localStorage.getItem('apikey_fmp')
+    const res = await fetch(`/api/company?ticker=${encodeURIComponent(ticker)}`, {
+      headers: key ? { 'x-fmp-key': key } : undefined,
+    })
     if (!res.ok) return null
     const data = await res.json()
     return data.financials ?? null

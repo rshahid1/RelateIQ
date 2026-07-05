@@ -1,78 +1,59 @@
 /**
- * Vercel serverless function — public-company financials for a ticker.
- *
- * Yahoo Finance gates its quoteSummary endpoint behind a cookie + "crumb", so
- * we grab those server-side first, then fetch the fundamentals. Best-effort:
- * always 200 with { financials, error } so the one-pager degrades gracefully.
+ * Vercel serverless function — public-company financials for a ticker via
+ * Financial Modeling Prep. The key comes from the `x-fmp-key` header (per-user,
+ * set in Settings) or the FMP_API_KEY env var. Best-effort: always 200 with
+ * { financials, error } so the one-pager degrades gracefully.
  */
 
-export const config = { maxDuration: 20 }
+export const config = { maxDuration: 15 }
 
-const UA =
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36'
-
-async function getCrumb() {
-  let cookie = ''
-  try {
-    const r = await fetch('https://fc.yahoo.com/', { headers: { 'User-Agent': UA }, redirect: 'manual', signal: AbortSignal.timeout(8000) })
-    cookie = (r.headers.get('set-cookie') || '').split(';')[0]
-  } catch { /* try next */ }
-  if (!cookie) {
-    try {
-      const r = await fetch('https://finance.yahoo.com/quote/AAPL', { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(8000) })
-      cookie = (r.headers.get('set-cookie') || '').split(';')[0]
-    } catch { /* give up */ }
-  }
-  if (!cookie) return null
-  try {
-    const cr = await fetch('https://query1.finance.yahoo.com/v1/test/getcrumb', {
-      headers: { 'User-Agent': UA, cookie },
-      signal: AbortSignal.timeout(8000),
-    })
-    const crumb = (await cr.text()).trim()
-    if (!crumb || crumb.length > 40 || /error|too many|<html/i.test(crumb)) return null
-    return { cookie, crumb }
-  } catch {
-    return null
-  }
+const fmtMoney = (n) => {
+  if (n == null || isNaN(n)) return null
+  if (n >= 1e12) return `$${(n / 1e12).toFixed(2)}T`
+  if (n >= 1e9) return `$${(n / 1e9).toFixed(1)}B`
+  if (n >= 1e6) return `$${(n / 1e6).toFixed(0)}M`
+  return `$${n}`
 }
-
-const pct = (r) => (r != null ? Math.round(r * 1000) / 10 : null)
 
 export default async function handler(req, res) {
   const ticker = req.query?.ticker
+  const key = req.headers['x-fmp-key'] || process.env.FMP_API_KEY
   if (!ticker || typeof ticker !== 'string') {
     return res.status(400).json({ financials: null, error: 'MISSING_TICKER' })
   }
+  if (!key) {
+    return res.status(200).json({ financials: null, error: 'NO_KEY' })
+  }
+
   try {
-    const c = await getCrumb()
-    if (!c) return res.status(200).json({ financials: null, error: 'NO_CRUMB' })
+    const base = 'https://financialmodelingprep.com/stable'
+    const sym = encodeURIComponent(ticker)
+    const [pRes, qRes] = await Promise.all([
+      fetch(`${base}/profile?symbol=${sym}&apikey=${key}`, { signal: AbortSignal.timeout(10000) }),
+      fetch(`${base}/quote?symbol=${sym}&apikey=${key}`, { signal: AbortSignal.timeout(10000) }),
+    ])
+    const pJson = await pRes.json().catch(() => null)
+    const qJson = await qRes.json().catch(() => null)
+    const prof = Array.isArray(pJson) ? pJson[0] : pJson
+    const quote = Array.isArray(qJson) ? qJson[0] : qJson
 
-    const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(ticker)}?crumb=${encodeURIComponent(c.crumb)}&modules=price,summaryDetail,financialData,defaultKeyStatistics,calendarEvents`
-    const r = await fetch(url, { headers: { 'User-Agent': UA, cookie: c.cookie }, signal: AbortSignal.timeout(10000) })
-    if (!r.ok) return res.status(200).json({ financials: null, error: 'FETCH_FAILED' })
-    const j = await r.json()
-    const d = j.quoteSummary?.result?.[0]
-    if (!d) return res.status(200).json({ financials: null, error: 'NO_DATA' })
+    if (prof?.['Error Message'] || quote?.['Error Message']) {
+      return res.status(200).json({ financials: null, error: 'KEY_OR_PLAN' })
+    }
+    if (!prof && !quote) {
+      return res.status(200).json({ financials: null, error: 'NO_DATA' })
+    }
 
-    const p = d.price || {}
-    const fd = d.financialData || {}
-    const ks = d.defaultKeyStatistics || {}
-    const sd = d.summaryDetail || {}
-    const cal = d.calendarEvents || {}
-
+    const rangeParts = typeof prof?.range === 'string' ? prof.range.split('-').map((s) => parseFloat(s)) : []
     const financials = {
-      name: p.longName || p.shortName || ticker,
-      marketCap: p.marketCap?.fmt || null,
-      pe: sd.trailingPE?.fmt || ks.forwardPE?.fmt || null,
-      revenue: fd.totalRevenue?.fmt || null,
-      revenueGrowth: pct(fd.revenueGrowth?.raw),
-      profitMargin: pct(fd.profitMargins?.raw),
-      recommendation: fd.recommendationKey || null,
-      targetPrice: fd.targetMeanPrice?.fmt || null,
-      week52High: sd.fiftyTwoWeekHigh?.fmt || null,
-      week52Low: sd.fiftyTwoWeekLow?.fmt || null,
-      nextEarnings: cal.earnings?.earningsDate?.[0]?.fmt || null,
+      name: prof?.companyName || quote?.name || ticker,
+      industry: prof?.industry || null,
+      marketCap: fmtMoney(prof?.marketCap ?? quote?.marketCap),
+      pe: quote?.pe != null ? String(Math.round(quote.pe * 10) / 10) : null,
+      eps: quote?.eps != null ? String(quote.eps) : null,
+      week52High: quote?.yearHigh ?? rangeParts[1] ?? null,
+      week52Low: quote?.yearLow ?? rangeParts[0] ?? null,
+      nextEarnings: quote?.earningsAnnouncement ? String(quote.earningsAnnouncement).slice(0, 10) : null,
     }
     return res.status(200).json({ financials })
   } catch {
