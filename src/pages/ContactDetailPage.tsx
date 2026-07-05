@@ -41,15 +41,21 @@ export default function ContactDetailPage({ onContactsChange }: { onContactsChan
   const [loading, setLoading] = useState(true)
 
   async function reload() {
-    if (!id) return
-    const [c, evs, ns, done] = await Promise.all([
-      getContact(id), getEventsForContact(id), getNotesForContact(id), getDoneCommitmentIds(),
-    ])
-    setContact(c ?? null)
-    setEvents(evs)
-    setNotes(ns)
-    setDoneIds(done)
-    setLoading(false)
+    if (!id) { setLoading(false); return }
+    try {
+      const [c, evs, ns, done] = await Promise.all([
+        getContact(id), getEventsForContact(id), getNotesForContact(id), getDoneCommitmentIds(),
+      ])
+      setContact(c ?? null)
+      setEvents(evs)
+      setNotes(ns)
+      setDoneIds(done)
+    } catch {
+      // e.g. an invalid contact id in the URL — show "not found" instead of hanging
+      setContact(null)
+    } finally {
+      setLoading(false)
+    }
   }
 
   useEffect(() => { reload() }, [id]) // eslint-disable-line react-hooks/exhaustive-deps

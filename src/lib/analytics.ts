@@ -235,14 +235,18 @@ async function newsViaGoogleRss(company: string): Promise<CompanyHeadline[]> {
   const doc = new DOMParser().parseFromString(text, 'text/xml')
   return Array.from(doc.querySelectorAll('item'))
     .slice(0, 5)
-    .map((item) => ({
-      // Google RSS titles include " - Source Name" at the end — strip it
-      title: item.querySelector('title')?.textContent?.replace(/ - [^-]+$/, '').trim() ?? '',
-      url: item.querySelector('link')?.nextSibling?.textContent?.trim() ??
-           item.querySelector('link')?.textContent?.trim() ?? '',
-      source: item.querySelector('source')?.textContent?.trim(),
-      published_at: item.querySelector('pubDate')?.textContent?.trim() ?? undefined,
-    }))
+    .map((item) => {
+      // The article URL is the <link> element's own text. Only accept absolute
+      // URLs — anything else (e.g. a bare <guid> id) would break in-app navigation.
+      const rawUrl = item.querySelector('link')?.textContent?.trim() ?? ''
+      return {
+        // Google RSS titles include " - Source Name" at the end — strip it
+        title: item.querySelector('title')?.textContent?.replace(/ - [^-]+$/, '').trim() ?? '',
+        url: /^https?:\/\//i.test(rawUrl) ? rawUrl : '',
+        source: item.querySelector('source')?.textContent?.trim(),
+        published_at: item.querySelector('pubDate')?.textContent?.trim() ?? undefined,
+      }
+    })
     .filter((h) => h.title && h.url)
 }
 
