@@ -221,11 +221,11 @@ export interface CompanyHeadline {
   published_at?: string
 }
 
-async function newsViaGoogleRss(company: string): Promise<CompanyHeadline[]> {
+async function newsViaGoogleRss(company: string, extra = ''): Promise<CompanyHeadline[]> {
   let res: Response
   try {
     res = await fetchWithTimeout(
-      `/gnews/rss/search?q=${encodeURIComponent(`"${company}"`)}&hl=en-US&gl=US&ceid=US:en`
+      `/gnews/rss/search?q=${encodeURIComponent(`"${company}"${extra}`)}&hl=en-US&gl=US&ceid=US:en`
     )
   } catch {
     return []
@@ -250,13 +250,15 @@ async function newsViaGoogleRss(company: string): Promise<CompanyHeadline[]> {
     .filter((h) => h.title && h.url)
 }
 
-export async function fetchCompanyHeadlines(company: string): Promise<CompanyHeadline[]> {
+export async function fetchCompanyHeadlines(company: string, terms?: string): Promise<CompanyHeadline[]> {
   const key = apiKey('newsapi')
+  // Extra keyword(s) AND-ed into the search to disambiguate common names (e.g. "WCF" → "WCF" insurance)
+  const extra = terms?.trim() ? ` ${terms.trim()}` : ''
   try {
     // NewsAPI if key configured
     if (key) {
       const res = await fetch(
-        `https://newsapi.org/v2/everything?q="${encodeURIComponent(company)}"&sortBy=publishedAt&pageSize=5&language=en&apiKey=${key}`
+        `https://newsapi.org/v2/everything?q=${encodeURIComponent(`"${company}"${extra}`)}&sortBy=publishedAt&pageSize=5&language=en&apiKey=${key}`
       )
       if (res.ok) {
         const data = await res.json()
@@ -274,7 +276,7 @@ export async function fetchCompanyHeadlines(company: string): Promise<CompanyHea
     // sourcelang:eng keeps results English/relevant.
     try {
       const res = await fetchWithTimeout(
-        `/gdelt/doc/doc?query=${encodeURIComponent(`"${company}" sourcelang:eng`)}&mode=artlist&maxrecords=8&format=json&timespan=21d&sort=datedesc`
+        `/gdelt/doc/doc?query=${encodeURIComponent(`"${company}"${extra} sourcelang:eng`)}&mode=artlist&maxrecords=8&format=json&timespan=21d&sort=datedesc`
       )
       if (res.ok) {
         const data = await res.json().catch(() => null)
@@ -292,7 +294,7 @@ export async function fetchCompanyHeadlines(company: string): Promise<CompanyHea
     } catch { /* fall through to Google News */ }
 
     // Google News RSS fallback — broad coverage, but redirect links (no AI summary)
-    return await newsViaGoogleRss(company)
+    return await newsViaGoogleRss(company, extra)
   } catch {
     return []
   }
@@ -312,6 +314,7 @@ export interface LinkedInProfile {
   title?: string
   headline?: string
   company?: string
+  industry?: string
   city?: string
   state?: string
   country?: string
@@ -360,6 +363,7 @@ export async function fetchLinkedInProfile(linkedinUrl: string): Promise<LinkedI
       title: (p.job_title ?? p.headline) as string | undefined,
       headline: p.headline as string | undefined,
       company: (p.company ?? p.company_name) as string | undefined,
+      industry: (p.company_industry ?? p.industry) as string | undefined,
       city,
       state: p.state as string | undefined,
       country,

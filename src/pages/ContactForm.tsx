@@ -66,6 +66,7 @@ export default function ContactForm({ contact, onClose, onSaved }: Props) {
     last_contacted: contact?.last_contacted ?? '',
     tier: contact?.tier ?? 'standard',
     ticker: contact?.ticker ?? '',
+    news_terms: contact?.news_terms ?? '',
     tags: contact?.tags?.join(', ') ?? '',
   })
   const [fetching, setFetching] = useState(false)
@@ -127,6 +128,7 @@ export default function ContactForm({ contact, onClose, onSaved }: Props) {
       country: profile.country,
       email: profile.email,
       phone: profile.phone,
+      news_terms: profile.industry,
       avatar_url: profile.photo_url,
     })
     setFillStatus('filled')
@@ -147,6 +149,7 @@ export default function ContactForm({ contact, onClose, onSaved }: Props) {
         ...form,
         tier: (form.tier || 'standard') as Contact['tier'],
         ticker: form.ticker?.trim().toUpperCase() || undefined,
+        news_terms: form.news_terms?.trim() || undefined,
         tags: form.tags.split(',').map((t) => t.trim()).filter(Boolean),
       }
       if (contact) await updateContact(contact.id, data)
@@ -310,6 +313,19 @@ export default function ContactForm({ contact, onClose, onSaved }: Props) {
               placeholder="RGA, MSFT, AAPL…"
             />
           </div>
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">
+            News search keyword <span className="text-gray-400 font-normal">(optional)</span>
+          </label>
+          <input
+            className="input"
+            value={form.news_terms}
+            onChange={(e) => set('news_terms', e.target.value)}
+            placeholder="e.g. insurance — narrows news for common names like WCF, ADP"
+          />
+          <p className="text-[11px] text-gray-400 mt-1">Added to the news search so you get the right company. Auto-fills from LinkedIn lookup.</p>
         </div>
 
         <div>

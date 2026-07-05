@@ -338,7 +338,7 @@ export default function ContactDetailPage({ onContactsChange }: { onContactsChan
       {/* Company news sidebar */}
       {contact.company && (
         <div className="w-72 flex-shrink-0 sticky top-6">
-          <CompanyNewsSidebar company={contact.company} contactFirstName={contact.first_name} />
+          <CompanyNewsSidebar company={contact.company} newsTerms={contact.news_terms} contactFirstName={contact.first_name} />
         </div>
       )}
 
@@ -583,18 +583,18 @@ function NewsItem({ headline }: { headline: CompanyHeadline }) {
   )
 }
 
-function CompanyNewsSidebar({ company, contactFirstName }: { company: string; contactFirstName: string }) {
+function CompanyNewsSidebar({ company, newsTerms, contactFirstName }: { company: string; newsTerms?: string; contactFirstName: string }) {
   const [headlines, setHeadlines] = useState<CompanyHeadline[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     let active = true
     setLoading(true)
-    fetchCompanyHeadlines(company)
+    fetchCompanyHeadlines(company, newsTerms)
       .then((items) => { if (active) { setHeadlines(items); setLoading(false) } })
       .catch(() => { if (active) { setHeadlines([]); setLoading(false) } })
     return () => { active = false }
-  }, [company])
+  }, [company, newsTerms])
 
   return (
     <div className="card">

@@ -17,6 +17,7 @@ export interface Contact {
   last_contacted?: string  // ISO date string
   tier?: 'key' | 'standard' | 'low'  // contact cadence tier
   ticker?: string                     // stock ticker for public company contacts
+  news_terms?: string                 // extra keywords to disambiguate news search (e.g. "insurance")
   created_at: string
   updated_at: string
 }
