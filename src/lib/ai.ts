@@ -5,11 +5,11 @@
  */
 export const AI_MODELS: { id: string; label: string; blurb: string }[] = [
   { id: 'claude-haiku-4-5-20251001', label: 'Haiku', blurb: 'Fastest and cheapest. Good for quick summaries.' },
-  { id: 'claude-sonnet-4-6', label: 'Sonnet', blurb: 'Balanced — sharper reasoning, still inexpensive. Recommended.' },
+  { id: 'claude-sonnet-5', label: 'Sonnet', blurb: 'Balanced — sharper reasoning, still inexpensive. Recommended.' },
   { id: 'claude-opus-4-8', label: 'Opus', blurb: 'Most capable, deepest reasoning. Best quality, higher cost.' },
 ]
 
-const DEFAULT_MODEL = 'claude-sonnet-4-6'
+const DEFAULT_MODEL = 'claude-sonnet-5'
 
 export function getAiModel(): string {
   const m = localStorage.getItem('ai_model')
