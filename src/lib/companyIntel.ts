@@ -22,8 +22,11 @@ export async function fetchStockSnapshot(ticker: string): Promise<StockSnapshot 
     const r = data.chart?.result?.[0]
     const meta = r?.meta
     if (!meta?.regularMarketPrice) return null
-    const prev = meta.chartPreviousClose ?? meta.previousClose
     const closes: number[] = (r.indicators?.quote?.[0]?.close ?? []).filter((x: number | null) => x != null)
+    // Daily change = current price vs the most recent PRIOR daily close. Yahoo's
+    // chartPreviousClose is relative to the range start (a month ago here), so use
+    // the second-to-last close in the series instead.
+    const prev = closes.length >= 2 ? closes[closes.length - 2] : (meta.chartPreviousClose ?? meta.previousClose)
     return {
       price: meta.regularMarketPrice,
       changePercent: prev ? ((meta.regularMarketPrice - prev) / prev) * 100 : 0,
@@ -49,11 +52,15 @@ export interface LastEarnings {
 export interface CompanyFinancials {
   name?: string
   industry?: string | null
+  price?: number | null
+  changePercent?: number | null
   marketCap?: string | null
   pe?: string | null
   eps?: string | null
   profitMargin?: string | null
   grossMargin?: string | null
+  beta?: string | null
+  dividend?: string | null
   week52High?: number | string | null
   week52Low?: number | string | null
   nextEarnings?: string | null
@@ -97,10 +104,14 @@ export function financialSummary(
   if (fin?.profitMargin) val.push(`a ${fin.profitMargin} net margin`)
   if (val.length) out.push(`${ticker} carries ${joinList(val)}.`)
 
-  if (stock) {
-    const dir = stock.changePercent >= 0 ? 'up' : 'down'
-    let p = `Shares trade near ${stock.currency === 'USD' ? '$' : ''}${stock.price.toFixed(2)}, ${dir} ${Math.abs(stock.changePercent).toFixed(1)}% recently`
-    if (stock.low52 && stock.high52) p += ` (52-week range ${stock.low52.toFixed(0)}–${stock.high52.toFixed(0)})`
+  const price = fin?.price ?? stock?.price
+  const chg = fin?.changePercent ?? stock?.changePercent
+  if (price != null) {
+    let p = `Shares trade near $${price.toFixed(2)}`
+    if (chg != null) p += `, ${chg >= 0 ? 'up' : 'down'} ${Math.abs(chg).toFixed(1)}% on the day`
+    const hi = typeof fin?.week52High === 'number' ? fin.week52High : stock?.high52
+    const lo = typeof fin?.week52Low === 'number' ? fin.week52Low : stock?.low52
+    if (hi && lo) p += ` (52-week range ${lo.toFixed(0)}–${hi.toFixed(0)})`
     out.push(p + '.')
   }
 

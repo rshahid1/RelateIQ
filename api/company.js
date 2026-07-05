@@ -81,7 +81,11 @@ export default async function handler(req, res) {
     const financials = {
       name: prof?.companyName || quote?.name || ticker,
       industry: prof?.industry || null,
+      price: prof?.price ?? quote?.price ?? null,
+      changePercent: prof?.changePercentage ?? quote?.changePercentage ?? null,
       marketCap: fmtMoney(prof?.marketCap ?? quote?.marketCap),
+      beta: prof?.beta != null ? String(Math.round(prof.beta * 100) / 100) : null,
+      dividend: prof?.lastDividend ? `$${Number(prof.lastDividend).toFixed(2)}` : null,
       pe: pe != null ? String(Math.round(pe * 10) / 10) : null,
       eps: eps != null ? String(Math.round(eps * 100) / 100) : null,
       profitMargin: fmtPct(ratios?.netProfitMarginTTM),

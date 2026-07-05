@@ -87,16 +87,23 @@ export default function AccountDetailPage({ contacts }: { contacts: Contact[] })
     )
   }
 
-  const up = (stock?.changePercent ?? 0) >= 0
+  // Prefer FMP's price/daily-change (accurate, broad coverage); fall back to Yahoo.
+  const displayPrice = fin?.price ?? stock?.price ?? null
+  const displayChange = fin?.changePercent ?? stock?.changePercent ?? null
+  const up = (displayChange ?? 0) >= 0
   const finSummary = ticker ? financialSummary(ticker, fin, stock) : null
 
+  const hi52 = (typeof fin?.week52High === 'number' ? fin.week52High : undefined) ?? stock?.high52
+  const lo52 = (typeof fin?.week52Low === 'number' ? fin.week52Low : undefined) ?? stock?.low52
   const metrics: { label: string; value: string }[] = []
   if (fin?.marketCap) metrics.push({ label: 'Market cap', value: fin.marketCap })
   if (fin?.pe) metrics.push({ label: 'P/E', value: fin.pe })
   if (fin?.eps) metrics.push({ label: 'EPS (ttm)', value: `$${fin.eps}` })
   if (fin?.profitMargin) metrics.push({ label: 'Net margin', value: fin.profitMargin })
   if (fin?.grossMargin) metrics.push({ label: 'Gross margin', value: fin.grossMargin })
-  if (stock?.low52 && stock?.high52) metrics.push({ label: '52-wk range', value: `${stock.low52.toFixed(0)}–${stock.high52.toFixed(0)}` })
+  if (fin?.dividend) metrics.push({ label: 'Last dividend', value: fin.dividend })
+  if (fin?.beta) metrics.push({ label: 'Beta', value: fin.beta })
+  if (hi52 && lo52) metrics.push({ label: '52-wk range', value: `${lo52.toFixed(0)}–${hi52.toFixed(0)}` })
 
   return (
     <div className="max-w-5xl">
@@ -105,7 +112,7 @@ export default function AccountDetailPage({ contacts }: { contacts: Contact[] })
       </Link>
 
       {/* Header — identity + live price hero */}
-      <div className="card mb-5">
+      <div className="card mb-6">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div className="flex items-start gap-4 min-w-0">
             <div className="w-14 h-14 rounded-2xl bg-brand-50 text-brand-600 flex items-center justify-center flex-shrink-0">
@@ -133,21 +140,21 @@ export default function AccountDetailPage({ contacts }: { contacts: Contact[] })
           </div>
 
           {/* Live price */}
-          {ticker && stock && (
+          {ticker && displayPrice != null && (
             <div className="flex items-center gap-3">
               <div className="text-right">
-                <p className="text-2xl font-bold text-gray-900 leading-none">
-                  {stock.currency === 'USD' ? '$' : ''}{stock.price.toFixed(2)}
-                </p>
-                <p className={`text-sm font-medium mt-1 flex items-center justify-end gap-1 ${up ? 'text-emerald-600' : 'text-red-500'}`}>
-                  {up ? <TrendingUp size={13} /> : <TrendingDown size={13} />}
-                  {up ? '+' : ''}{stock.changePercent.toFixed(2)}%
-                </p>
+                <p className="text-3xl font-bold text-gray-900 leading-none">${displayPrice.toFixed(2)}</p>
+                {displayChange != null && (
+                  <p className={`text-sm font-medium mt-1.5 flex items-center justify-end gap-1 ${up ? 'text-emerald-600' : 'text-red-500'}`}>
+                    {up ? <TrendingUp size={13} /> : <TrendingDown size={13} />}
+                    {up ? '+' : ''}{displayChange.toFixed(2)}% today
+                  </p>
+                )}
               </div>
-              <Sparkline data={stock.spark} up={up} />
+              {stock && stock.spark.length > 1 && <Sparkline data={stock.spark} up={up} />}
             </div>
           )}
-          {ticker && !stock && (
+          {ticker && displayPrice == null && (
             <p className="text-sm text-gray-400 flex items-center gap-2"><Loader2 size={13} className="animate-spin" /> Loading price…</p>
           )}
         </div>
@@ -155,7 +162,7 @@ export default function AccountDetailPage({ contacts }: { contacts: Contact[] })
 
       {/* Financials & earnings — one dedicated, organized section */}
       {ticker && (
-        <div className="card mb-5">
+        <div className="card mb-6">
           <h2 className="font-semibold text-gray-900 flex items-center gap-2 mb-4">
             <BarChart2 size={16} className="text-emerald-600" /> Financials &amp; earnings
           </h2>
@@ -167,13 +174,13 @@ export default function AccountDetailPage({ contacts }: { contacts: Contact[] })
           ) : (
             <>
               {/* Metric strip */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-y-4 gap-x-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-y-6 gap-x-6">
                 {metrics.map((m) => <Metric key={m.label} label={m.label} value={m.value} />)}
               </div>
 
               {/* Earnings */}
               {(fin?.lastEarnings || fin?.nextEarnings) && (
-                <div className="mt-5 pt-5 border-t border-gray-100 grid sm:grid-cols-2 gap-4">
+                <div className="mt-6 pt-6 border-t border-gray-100 grid sm:grid-cols-2 gap-4">
                   {fin?.lastEarnings && (
                     <div className={`rounded-xl p-3.5 ${fin.lastEarnings.beat ? 'bg-emerald-50' : fin.lastEarnings.beat === false ? 'bg-amber-50' : 'bg-gray-50'}`}>
                       <div className="flex items-center justify-between mb-1.5">
@@ -217,9 +224,9 @@ export default function AccountDetailPage({ contacts }: { contacts: Contact[] })
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left: brief + news */}
-        <div className="lg:col-span-2 space-y-5">
+        <div className="lg:col-span-2 space-y-6">
           {/* AI account brief */}
           <div className="card">
             <h2 className="font-semibold text-gray-900 flex items-center gap-2 mb-3">
