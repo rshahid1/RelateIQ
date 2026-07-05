@@ -269,24 +269,39 @@ export async function fetchCompanyHeadlines(company: string): Promise<CompanyHea
         if (results.length > 0) return results
       }
     }
-    // Google News RSS — free, broad coverage, no key needed
-    const googleResults = await newsViaGoogleRss(company)
-    if (googleResults.length > 0) return googleResults
+    // GDELT first — returns DIRECT article URLs, so headline links AND AI summaries
+    // work (Google News uses obfuscated redirects that can't be fetched/summarized).
+    // sourcelang:eng keeps results English/relevant.
+    try {
+      const res = await fetchWithTimeout(
+        `/gdelt/doc/doc?query=${encodeURIComponent(`"${company}" sourcelang:eng`)}&mode=artlist&maxrecords=8&format=json&timespan=21d&sort=datedesc`
+      )
+      if (res.ok) {
+        const data = await res.json().catch(() => null)
+        const arts = (data?.articles ?? [])
+          .map((a: { title: string; url: string; domain?: string; seendate?: string }) => ({
+            title: a.title,
+            url: a.url,
+            source: a.domain,
+            published_at: a.seendate ? gdeltDate(a.seendate) : undefined,
+          }))
+          .filter((h: CompanyHeadline) => h.title && /^https?:\/\//.test(h.url))
+          .slice(0, 5)
+        if (arts.length > 0) return arts
+      }
+    } catch { /* fall through to Google News */ }
 
-    // GDELT as last resort
-    const res = await fetchWithTimeout(
-      `/gdelt/doc/doc?query=${encodeURIComponent(`"${company}"`)}&mode=artlist&maxrecords=5&format=json&timespan=90d&sort=datedesc`
-    )
-    if (!res.ok) return []
-    const data = await res.json().catch(() => null)
-    return (data?.articles ?? [])
-      .slice(0, 5)
-      .map((a: { title: string; url: string; domain?: string }) => ({
-        title: a.title, url: a.url, source: a.domain,
-      }))
+    // Google News RSS fallback — broad coverage, but redirect links (no AI summary)
+    return await newsViaGoogleRss(company)
   } catch {
     return []
   }
+}
+
+/** GDELT seendate "20260705T120000Z" → ISO string. */
+function gdeltDate(s: string): string | undefined {
+  const m = s.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/)
+  return m ? `${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6]}Z` : undefined
 }
 
 // ── LinkedIn Profile Lookup (single contact, for auto-fill) ──────────────────
