@@ -221,34 +221,6 @@ export interface CompanyHeadline {
   published_at?: string
 }
 
-async function newsViaGoogleRss(company: string, extra = '', limit = 5): Promise<CompanyHeadline[]> {
-  let res: Response
-  try {
-    res = await fetchWithTimeout(
-      `/gnews/rss/search?q=${encodeURIComponent(`"${company}"${extra}`)}&hl=en-US&gl=US&ceid=US:en`
-    )
-  } catch {
-    return []
-  }
-  if (!res.ok) return []
-  const text = await res.text()
-  const doc = new DOMParser().parseFromString(text, 'text/xml')
-  return Array.from(doc.querySelectorAll('item'))
-    .slice(0, limit)
-    .map((item) => {
-      // The article URL is the <link> element's own text. Only accept absolute
-      // URLs — anything else (e.g. a bare <guid> id) would break in-app navigation.
-      const rawUrl = item.querySelector('link')?.textContent?.trim() ?? ''
-      return {
-        // Google RSS titles include " - Source Name" at the end — strip it
-        title: item.querySelector('title')?.textContent?.replace(/ - [^-]+$/, '').trim() ?? '',
-        url: /^https?:\/\//i.test(rawUrl) ? rawUrl : '',
-        source: item.querySelector('source')?.textContent?.trim(),
-        published_at: item.querySelector('pubDate')?.textContent?.trim() ?? undefined,
-      }
-    })
-    .filter((h) => h.title && h.url)
-}
 
 export async function fetchCompanyHeadlines(company: string, terms?: string, limit = 5): Promise<CompanyHeadline[]> {
   const key = apiKey('newsapi')
@@ -291,10 +263,12 @@ export async function fetchCompanyHeadlines(company: string, terms?: string, lim
           .slice(0, limit)
         if (arts.length > 0) return arts
       }
-    } catch { /* fall through to Google News */ }
+    } catch { /* GDELT unavailable — return nothing rather than noisy fallback */ }
 
-    // Google News RSS fallback — broad coverage, but redirect links (no AI summary)
-    return await newsViaGoogleRss(company, extra, limit)
+    // GDELT-only by design: its direct article URLs are summarizable and far less
+    // noisy than Google News RSS (obfuscated redirects). If GDELT has nothing for
+    // this company, we honestly show "no recent news" instead of acronym noise.
+    return []
   } catch {
     return []
   }
