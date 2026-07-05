@@ -221,7 +221,7 @@ export interface CompanyHeadline {
   published_at?: string
 }
 
-async function newsViaGoogleRss(company: string, extra = ''): Promise<CompanyHeadline[]> {
+async function newsViaGoogleRss(company: string, extra = '', limit = 5): Promise<CompanyHeadline[]> {
   let res: Response
   try {
     res = await fetchWithTimeout(
@@ -234,7 +234,7 @@ async function newsViaGoogleRss(company: string, extra = ''): Promise<CompanyHea
   const text = await res.text()
   const doc = new DOMParser().parseFromString(text, 'text/xml')
   return Array.from(doc.querySelectorAll('item'))
-    .slice(0, 5)
+    .slice(0, limit)
     .map((item) => {
       // The article URL is the <link> element's own text. Only accept absolute
       // URLs — anything else (e.g. a bare <guid> id) would break in-app navigation.
@@ -250,7 +250,7 @@ async function newsViaGoogleRss(company: string, extra = ''): Promise<CompanyHea
     .filter((h) => h.title && h.url)
 }
 
-export async function fetchCompanyHeadlines(company: string, terms?: string): Promise<CompanyHeadline[]> {
+export async function fetchCompanyHeadlines(company: string, terms?: string, limit = 5): Promise<CompanyHeadline[]> {
   const key = apiKey('newsapi')
   // Extra keyword(s) AND-ed into the search to disambiguate common names (e.g. "WCF" → "WCF" insurance)
   const extra = terms?.trim() ? ` ${terms.trim()}` : ''
@@ -258,13 +258,13 @@ export async function fetchCompanyHeadlines(company: string, terms?: string): Pr
     // NewsAPI if key configured
     if (key) {
       const res = await fetch(
-        `https://newsapi.org/v2/everything?q=${encodeURIComponent(`"${company}"${extra}`)}&sortBy=publishedAt&pageSize=5&language=en&apiKey=${key}`
+        `https://newsapi.org/v2/everything?q=${encodeURIComponent(`"${company}"${extra}`)}&sortBy=publishedAt&pageSize=${limit}&language=en&apiKey=${key}`
       )
       if (res.ok) {
         const data = await res.json()
         const results = (data.articles ?? [])
           .filter((a: { publishedAt: string }) => differenceInDays(new Date(), new Date(a.publishedAt)) <= 90)
-          .slice(0, 5)
+          .slice(0, limit)
           .map((a: { title: string; url: string; source?: { name: string } }) => ({
             title: a.title, url: a.url, source: a.source?.name,
           }))
@@ -276,7 +276,7 @@ export async function fetchCompanyHeadlines(company: string, terms?: string): Pr
     // sourcelang:eng keeps results English/relevant.
     try {
       const res = await fetchWithTimeout(
-        `/gdelt/doc/doc?query=${encodeURIComponent(`"${company}"${extra} sourcelang:eng`)}&mode=artlist&maxrecords=8&format=json&timespan=21d&sort=datedesc`
+        `/gdelt/doc/doc?query=${encodeURIComponent(`"${company}"${extra} sourcelang:eng`)}&mode=artlist&maxrecords=${Math.min(60, limit * 3)}&format=json&timespan=30d&sort=datedesc`
       )
       if (res.ok) {
         const data = await res.json().catch(() => null)
@@ -288,13 +288,13 @@ export async function fetchCompanyHeadlines(company: string, terms?: string): Pr
             published_at: a.seendate ? gdeltDate(a.seendate) : undefined,
           }))
           .filter((h: CompanyHeadline) => h.title && /^https?:\/\//.test(h.url))
-          .slice(0, 5)
+          .slice(0, limit)
         if (arts.length > 0) return arts
       }
     } catch { /* fall through to Google News */ }
 
     // Google News RSS fallback — broad coverage, but redirect links (no AI summary)
-    return await newsViaGoogleRss(company, extra)
+    return await newsViaGoogleRss(company, extra, limit)
   } catch {
     return []
   }
@@ -304,6 +304,55 @@ export async function fetchCompanyHeadlines(company: string, terms?: string): Pr
 function gdeltDate(s: string): string | undefined {
   const m = s.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/)
   return m ? `${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6]}Z` : undefined
+}
+
+/**
+ * AI relevance filter — given a broad candidate pool of headlines, keep only the
+ * ones genuinely about THIS company (using its industry + the contact's role to
+ * disambiguate common names like "WCF"). No Anthropic key → returns unchanged.
+ * On any failure, returns the input unchanged so news still shows.
+ */
+export async function filterRelevantHeadlines(
+  headlines: CompanyHeadline[],
+  ctx: { company: string; title?: string; hint?: string }
+): Promise<CompanyHeadline[]> {
+  const key = localStorage.getItem('apikey_anthropic')
+  if (!key || headlines.length <= 2) return headlines
+
+  const list = headlines.map((h, i) => `${i}. ${h.title}${h.source ? ` — ${h.source}` : ''}`).join('\n')
+  const who = [ctx.hint && `industry: ${ctx.hint}`, ctx.title && `contact's role: ${ctx.title}`]
+    .filter(Boolean)
+    .join('; ')
+  const prompt = `I follow the company "${ctx.company}"${who ? ` (${who})` : ''}. Company names are often ambiguous acronyms. From the numbered headlines below, return ONLY the numbers of the ones genuinely about THIS company (the same organization/industry). Exclude unrelated uses of the name. Respond with a JSON array of numbers only, e.g. [0,3,4].\n\n${list}`
+
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'anthropic-version': '2023-06-01',
+        'x-api-key': key,
+        'anthropic-dangerous-direct-browser-access': 'true',
+      },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 120,
+        messages: [{ role: 'user', content: prompt }],
+      }),
+    })
+    if (!res.ok) return headlines
+    const data = await res.json()
+    const text: string = data?.content?.[0]?.text ?? ''
+    const start = text.indexOf('[')
+    const end = text.lastIndexOf(']')
+    if (start === -1 || end === -1) return headlines
+    const idxs = JSON.parse(text.slice(start, end + 1))
+    if (!Array.isArray(idxs)) return headlines
+    const kept = idxs.map((n: number) => headlines[n]).filter(Boolean)
+    return kept // respect the AI's picks (empty → genuinely nothing relevant)
+  } catch {
+    return headlines
+  }
 }
 
 // ── LinkedIn Profile Lookup (single contact, for auto-fill) ──────────────────

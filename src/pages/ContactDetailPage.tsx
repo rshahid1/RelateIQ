@@ -15,7 +15,7 @@ import { extractCommitments } from '../lib/intelligence'
 import { getAiModel } from '../lib/ai'
 import BriefingModal from '../components/BriefingModal'
 import { Contact, LifeEvent, MeetingNote, EventCategory } from '../types'
-import { fetchCompanyHeadlines, CompanyHeadline } from '../lib/analytics'
+import { fetchCompanyHeadlines, filterRelevantHeadlines, CompanyHeadline } from '../lib/analytics'
 import Avatar from '../components/Avatar'
 import Modal from '../components/Modal'
 import ContactForm from './ContactForm'
@@ -338,7 +338,7 @@ export default function ContactDetailPage({ onContactsChange }: { onContactsChan
       {/* Company news sidebar */}
       {contact.company && (
         <div className="w-72 flex-shrink-0 sticky top-6">
-          <CompanyNewsSidebar company={contact.company} newsTerms={contact.news_terms} contactFirstName={contact.first_name} />
+          <CompanyNewsSidebar company={contact.company} newsTerms={contact.news_terms} title={contact.title} contactFirstName={contact.first_name} />
         </div>
       )}
 
@@ -583,18 +583,20 @@ function NewsItem({ headline }: { headline: CompanyHeadline }) {
   )
 }
 
-function CompanyNewsSidebar({ company, newsTerms, contactFirstName }: { company: string; newsTerms?: string; contactFirstName: string }) {
+function CompanyNewsSidebar({ company, newsTerms, title, contactFirstName }: { company: string; newsTerms?: string; title?: string; contactFirstName: string }) {
   const [headlines, setHeadlines] = useState<CompanyHeadline[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     let active = true
     setLoading(true)
-    fetchCompanyHeadlines(company, newsTerms)
-      .then((items) => { if (active) { setHeadlines(items); setLoading(false) } })
+    // Pull a broad candidate pool, then let the AI keep only the relevant ones
+    fetchCompanyHeadlines(company, newsTerms, 18)
+      .then((items) => filterRelevantHeadlines(items, { company, title, hint: newsTerms }))
+      .then((items) => { if (active) { setHeadlines(items.slice(0, 6)); setLoading(false) } })
       .catch(() => { if (active) { setHeadlines([]); setLoading(false) } })
     return () => { active = false }
-  }, [company, newsTerms])
+  }, [company, newsTerms, title])
 
   return (
     <div className="card">
