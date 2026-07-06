@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { KeyRound, CloudRain, Newspaper, Linkedin, Save, CheckCircle2, Chrome, Sparkles, LineChart } from 'lucide-react'
+import { KeyRound, CloudRain, Newspaper, Linkedin, Save, CheckCircle2, Chrome, Sparkles, LineChart, Search } from 'lucide-react'
 import { getGoogleClientId, setGoogleClientId } from '../lib/google'
 import { AI_MODELS, getAiModel, setAiModel } from '../lib/ai'
 
@@ -8,6 +8,7 @@ interface ApiKeys {
   rapidapi: string
   anthropic: string
   fmp: string
+  tavily: string
 }
 
 export default function SettingsPage() {
@@ -17,6 +18,7 @@ export default function SettingsPage() {
     rapidapi: localStorage.getItem('apikey_rapidapi') ?? '',
     anthropic: localStorage.getItem('apikey_anthropic') ?? '',
     fmp: localStorage.getItem('apikey_fmp') ?? '',
+    tavily: localStorage.getItem('apikey_tavily') ?? '',
   })
   const [aiModel, setAiModelState] = useState(getAiModel)
   const [saved, setSaved] = useState(false)
@@ -64,6 +66,8 @@ export default function SettingsPage() {
     else localStorage.removeItem('apikey_anthropic')
     if (keys.fmp) localStorage.setItem('apikey_fmp', keys.fmp.trim())
     else localStorage.removeItem('apikey_fmp')
+    if (keys.tavily) localStorage.setItem('apikey_tavily', keys.tavily.trim())
+    else localStorage.removeItem('apikey_tavily')
     setAiModel(aiModel)
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
@@ -198,6 +202,34 @@ export default function SettingsPage() {
               onChange={(e) => setKeys((k) => ({ ...k, fmp: e.target.value }))}
             />
           </div>
+        </div>
+
+        {/* Tavily — web search for contact persona */}
+        <div className="card">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="bg-violet-50 rounded-xl p-2">
+              <Search size={16} className="text-violet-600" />
+            </div>
+            <div>
+              <p className="font-semibold text-sm text-gray-900 flex items-center gap-2">
+                Web search
+                {keys.tavily && <span className="badge bg-emerald-100 text-emerald-700">Connected</span>}
+              </p>
+              <p className="text-xs text-gray-500">Deepens the “Get to know them” profile with web results (bios, interviews, talks) via Tavily.</p>
+            </div>
+            <a href="https://app.tavily.com/home" target="_blank" rel="noopener noreferrer" className="ml-auto text-xs text-brand-500 hover:underline whitespace-nowrap">Get free key →</a>
+          </div>
+          <div className="flex items-center gap-2">
+            <KeyRound size={13} className="text-gray-400 flex-shrink-0" />
+            <input
+              className="input"
+              type="password"
+              placeholder="tvly-…"
+              value={keys.tavily}
+              onChange={(e) => setKeys((k) => ({ ...k, tavily: e.target.value }))}
+            />
+          </div>
+          <p className="text-xs text-gray-400 mt-2">Optional — without it, persona insights fall back to free news sources.</p>
         </div>
 
         {/* Anthropic — voice note summarization */}

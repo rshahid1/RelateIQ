@@ -75,11 +75,37 @@ export interface WebMention {
   title: string
   source?: string
   url: string
+  snippet?: string
+}
+
+/** Rich general-web search via Tavily (through /api/websearch). [] when no key. */
+async function fetchTavily(contact: Contact): Promise<WebMention[]> {
+  const key = apiKey('tavily')
+  if (!key) return []
+  const name = [contact.first_name, contact.last_name].filter(Boolean).join(' ').trim()
+  if (!name) return []
+  const q = `${[name, contact.title, contact.company].filter(Boolean).join(' ')} — background, interests, and notable activities`
+  try {
+    const res = await fetch(`/api/websearch?q=${encodeURIComponent(q)}`, {
+      headers: { 'x-tavily-key': key },
+      signal: AbortSignal.timeout(15000),
+    })
+    if (!res.ok) return []
+    const data = await res.json()
+    return (Array.isArray(data.results) ? data.results : [])
+      .map((r: { title?: string; url?: string; source?: string; content?: string }) => ({
+        title: r.title, url: r.url, source: r.source, snippet: r.content,
+      }))
+      .filter((x: WebMention) => x.title && /^https?:\/\//i.test(x.url)) as WebMention[]
+  } catch {
+    return []
+  }
 }
 
 /**
  * Broader web/news mentions of the person (beyond LinkedIn) — interviews, quotes,
- * press, speaking, causes. Uses the GDELT + Google News proxies (no extra key).
+ * press, speaking, causes. Prefers Tavily (general web, with snippets) when a key
+ * is set, then supplements with the GDELT + Google News proxies (no extra key).
  * Best-effort and honest: many private individuals simply aren't written about.
  */
 export async function fetchWebMentions(contact: Contact): Promise<WebMention[]> {
@@ -91,6 +117,15 @@ export async function fetchWebMentions(contact: Contact): Promise<WebMention[]> 
   const seen = new Set<string>()
   const out: WebMention[] = []
 
+  // Tavily results are relevance-ranked and person-scoped — trust them as-is.
+  const tav = await fetchTavily(contact)
+  for (const t of tav) {
+    const k = t.title.toLowerCase().slice(0, 60)
+    if (seen.has(k)) continue
+    seen.add(k)
+    out.push(t)
+  }
+
   const add = (title?: string, url?: string, source?: string) => {
     if (!title || !url || !/^https?:\/\//i.test(url)) return
     const key = title.toLowerCase().slice(0, 60)
@@ -101,8 +136,8 @@ export async function fetchWebMentions(contact: Contact): Promise<WebMention[]> 
     out.push({ title, url, source })
   }
 
-  // GDELT — direct article URLs
-  try {
+  // GDELT — direct article URLs (supplement)
+  if (out.length < 6) try {
     const res = await fetch(
       `/gdelt/doc/doc?query=${encodeURIComponent(`${phrase} sourcelang:eng`)}&mode=artlist&maxrecords=15&format=json&sort=datedesc`,
       { signal: AbortSignal.timeout(9000) }
@@ -132,7 +167,7 @@ export async function fetchWebMentions(contact: Contact): Promise<WebMention[]> 
     } catch { /* ignore */ }
   }
 
-  return out.slice(0, 6)
+  return out.slice(0, 8)
 }
 
 /** Claude synthesizes a personal profile (markdown) from LinkedIn + web mentions. Needs Anthropic key. */
@@ -153,7 +188,7 @@ export async function generatePersona(
     dossier?.education.length && `Education: ${dossier.education.join(' | ')}`,
     dossier?.experience.length && `Experience: ${dossier.experience.join(' | ')}`,
     dossier?.audience && `Audience: ${dossier.audience}`,
-    web.length && `Web & news mentions (what the wider internet says about them):\n${web.map((w) => `- ${w.title}${w.source ? ` (${w.source})` : ''}`).join('\n')}`,
+    web.length && `Web & news mentions (what the wider internet says about them):\n${web.map((w) => `- ${w.title}${w.source ? ` (${w.source})` : ''}${w.snippet ? `: ${w.snippet}` : ''}`).join('\n')}`,
   ].filter(Boolean).join('\n')
 
   if (!details.trim()) return null
