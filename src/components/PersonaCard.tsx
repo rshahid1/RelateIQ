@@ -21,23 +21,33 @@ export default function PersonaCard({ contact }: { contact: Contact }) {
   }, [contact.id])
 
   const hasUrl = !!contact.linkedin_url
-  const hasRapid = !!localStorage.getItem('apikey_rapidapi')
-  const hasAnthropic = !!localStorage.getItem('apikey_anthropic')
 
   async function generate() {
     if (!contact.linkedin_url) return
+    // Precise key checks at click time (localStorage is per-browser; Private
+    // windows and other devices won't have keys saved in your normal window).
+    if (!localStorage.getItem('apikey_rapidapi')?.trim()) {
+      setStatus('error')
+      setError('No RapidAPI key found in this browser. Save it in Settings (and make sure you’re not in a Private window).')
+      return
+    }
+    if (!localStorage.getItem('apikey_anthropic')?.trim()) {
+      setStatus('error')
+      setError('No Anthropic key found in this browser. Save it in Settings (and make sure you’re not in a Private window).')
+      return
+    }
     setStatus('loading')
     setError(null)
     const dossier = await fetchLinkedInDossier(contact.linkedin_url)
     if (!dossier) {
       setStatus('error')
-      setError('Could not load their LinkedIn profile. Check the URL and your RapidAPI key.')
+      setError('Could not load their LinkedIn profile. Check the URL is correct and your RapidAPI subscription is active.')
       return
     }
     const t = await generatePersona(contact, dossier)
     if (!t) {
       setStatus('error')
-      setError('Couldn’t generate insights — verify your Anthropic key in Settings.')
+      setError('Couldn’t generate insights — verify your Anthropic key is valid (Settings → Test).')
       return
     }
     const now = new Date().toISOString()
@@ -62,8 +72,6 @@ export default function PersonaCard({ contact }: { contact: Contact }) {
 
       {!hasUrl ? (
         <p className="text-sm text-gray-400">Add their LinkedIn URL (Edit contact) to build a personal profile.</p>
-      ) : !hasRapid || !hasAnthropic ? (
-        <p className="text-sm text-amber-700">Needs your RapidAPI and Anthropic keys in Settings.</p>
       ) : status === 'loading' ? (
         <p className="text-sm text-gray-500 flex items-center gap-2">
           <Loader2 size={14} className="animate-spin" /> Reading their LinkedIn…
