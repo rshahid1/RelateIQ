@@ -15,6 +15,7 @@ import { extractCommitments } from '../lib/intelligence'
 import { getAiModel } from '../lib/ai'
 import BriefingModal from '../components/BriefingModal'
 import NewsItem from '../components/NewsItem'
+import PersonaCard from '../components/PersonaCard'
 import { Contact, LifeEvent, MeetingNote, EventCategory } from '../types'
 import { fetchCompanyHeadlines, filterRelevantHeadlines, CompanyHeadline } from '../lib/analytics'
 import Avatar from '../components/Avatar'
@@ -336,10 +337,13 @@ export default function ContactDetailPage({ onContactsChange }: { onContactsChan
 
       </div>{/* end main column */}
 
-      {/* Company news sidebar */}
-      {contact.company && (
-        <div className="w-72 flex-shrink-0 sticky top-6">
-          <CompanyNewsSidebar company={contact.company} newsTerms={contact.news_terms} title={contact.title} contactFirstName={contact.first_name} />
+      {/* Sidebar — persona + company news */}
+      {(contact.company || contact.linkedin_url) && (
+        <div className="w-72 flex-shrink-0 sticky top-6 space-y-5">
+          <PersonaCard contact={contact} />
+          {contact.company && (
+            <CompanyNewsSidebar company={contact.company} newsTerms={contact.news_terms} title={contact.title} contactFirstName={contact.first_name} />
+          )}
         </div>
       )}
 
