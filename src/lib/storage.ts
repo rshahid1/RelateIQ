@@ -34,6 +34,23 @@ function nullEmptyDates<T extends Record<string, unknown>>(obj: T): T {
   return obj
 }
 
+/**
+ * If Postgres rejects an unknown column (code 42703 — e.g. a schema migration
+ * hasn't been run yet), drop that column from the payload so the rest still
+ * saves. Returns a trimmed copy, or null if nothing could be stripped.
+ */
+function stripMissingColumn(
+  payload: Record<string, unknown>,
+  error: { code?: string; message?: string } | null
+): Record<string, unknown> | null {
+  if (!error || error.code !== '42703') return null
+  const m = error.message?.match(/column \S*?\.?(\w+) does not exist/)
+  const col = m?.[1]
+  if (!col || !(col in payload)) return null
+  const { [col]: _drop, ...rest } = payload
+  return rest
+}
+
 // ── Contacts ──────────────────────────────────────────────────────────────────
 
 export async function getContacts(): Promise<Contact[]> {
@@ -49,23 +66,29 @@ export async function getContact(id: string): Promise<Contact | undefined> {
 }
 
 export async function createContact(data: Omit<Contact, 'id' | 'created_at' | 'updated_at'>): Promise<Contact> {
-  const { data: row, error } = await supabase
-    .from('contacts')
-    .insert(nullEmptyDates({ ...data, user_id: uid() }))
-    .select()
-    .single()
+  let payload = nullEmptyDates({ ...data, user_id: uid() }) as Record<string, unknown>
+  let { data: row, error } = await supabase.from('contacts').insert(payload).select().single()
+  // Retry without any column the schema doesn't have yet (e.g. news_terms).
+  for (let i = 0; i < 3 && error; i++) {
+    const stripped = stripMissingColumn(payload, error)
+    if (!stripped) break
+    payload = stripped
+    ;({ data: row, error } = await supabase.from('contacts').insert(payload).select().single())
+  }
   if (error) throw error
   return row as Contact
 }
 
 export async function updateContact(id: string, data: Partial<Contact>): Promise<Contact> {
   const { id: _i, user_id: _u, created_at: _c, ...patch } = data as Record<string, unknown>
-  const { data: row, error } = await supabase
-    .from('contacts')
-    .update(nullEmptyDates({ ...patch, updated_at: now() }))
-    .eq('id', id)
-    .select()
-    .single()
+  let payload = nullEmptyDates({ ...patch, updated_at: now() }) as Record<string, unknown>
+  let { data: row, error } = await supabase.from('contacts').update(payload).eq('id', id).select().single()
+  for (let i = 0; i < 3 && error; i++) {
+    const stripped = stripMissingColumn(payload, error)
+    if (!stripped) break
+    payload = stripped
+    ;({ data: row, error } = await supabase.from('contacts').update(payload).eq('id', id).select().single())
+  }
   if (error) throw error
   return row as Contact
 }
