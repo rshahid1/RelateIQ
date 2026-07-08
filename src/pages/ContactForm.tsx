@@ -159,15 +159,17 @@ export default function ContactForm({ contact, onClose, onSaved }: Props) {
       // Supabase/PostgREST errors are plain objects (message/details/hint/code),
       // not Error instances — extract a meaningful message from either shape.
       console.error('Contact save failed:', err)
-      let msg = 'Could not save. Please try again.'
+      let msg = ''
       if (err instanceof Error && err.message) {
         msg = err.message
       } else if (err && typeof err === 'object') {
         const e = err as { message?: string; details?: string; hint?: string; code?: string }
-        msg = [e.message, e.details, e.hint && `(${e.hint})`, e.code && `[${e.code}]`]
-          .filter(Boolean).join(' ') || msg
+        msg = [e.message, e.details, e.hint && `(${e.hint})`, e.code && `[${e.code}]`].filter(Boolean).join(' ')
+        if (!msg) {
+          try { msg = JSON.stringify(err) } catch { /* ignore */ }
+        }
       }
-      setSaveError(msg)
+      setSaveError(msg || 'Could not save. Please try again.')
       setSaving(false)
     }
   }
