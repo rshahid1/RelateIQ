@@ -839,29 +839,70 @@ export interface ConferenceSuggestion {
   location?: string
   description?: string
   url?: string             // official website
+  confirmed?: boolean      // date corroborated by live web sources
+}
+
+/** Live web results (Tavily via /api/websearch) to ground conference discovery. */
+async function conferenceWebContext(interest: string): Promise<string> {
+  const key = localStorage.getItem('apikey_tavily')
+  if (!key) return ''
+  const year = new Date().getFullYear()
+  const queries = [
+    `top ${interest} conferences ${year} ${year + 1} dates locations`,
+    `${interest} industry events calendar upcoming registration`,
+  ]
+  try {
+    const searches = await Promise.all(queries.map(async (q) => {
+      const res = await fetch(`/api/websearch?q=${encodeURIComponent(q)}`, {
+        headers: { 'x-tavily-key': key },
+        signal: AbortSignal.timeout(15000),
+      })
+      if (!res.ok) return []
+      const data = await res.json()
+      return Array.isArray(data.results) ? data.results : []
+    }))
+    const seen = new Set<string>()
+    const lines: string[] = []
+    for (const r of searches.flat()) {
+      if (!r?.title || !r?.url || seen.has(r.url)) continue
+      seen.add(r.url)
+      lines.push(`- ${r.title} [${r.url}]${r.content ? `: ${String(r.content).slice(0, 300)}` : ''}`)
+    }
+    return lines.slice(0, 10).join('\n')
+  } catch {
+    return ''
+  }
 }
 
 /**
- * Asks Claude for real, well-known recurring industry conferences relevant to
- * the given interest, with best-estimate next dates. Throws 'NO_KEY' if the
- * Anthropic key isn't set so the caller can prompt the user.
+ * Finds real upcoming industry conferences for an interest. When a Tavily key
+ * is set, live web results ground the answer (accurate dates + URLs, flagged
+ * "confirmed"); otherwise Claude answers from general knowledge with estimated
+ * dates. Throws 'NO_KEY' if the Anthropic key isn't set.
  */
-export async function discoverConferences(interest: string): Promise<ConferenceSuggestion[]> {
+export async function discoverConferences(interest: string, audienceHint?: string): Promise<ConferenceSuggestion[]> {
   const key = localStorage.getItem('apikey_anthropic')
   if (!key) throw new Error('NO_KEY')
 
   const today = new Date()
   const year = today.getFullYear()
-  const prompt = `List up to 8 real, well-known recurring conferences and industry events relevant to: "${interest}".
+  const webContext = await conferenceWebContext(interest)
+
+  const prompt = `You are helping an enterprise account manager${audienceHint ? ` (their book of business: ${audienceHint})` : ''} find the industry conferences worth attending for: "${interest}".
+
+${webContext ? `LIVE WEB RESULTS (today is ${format(today, 'yyyy-MM-dd')} — treat these as the source of truth for names, dates, locations, and official sites):
+${webContext}
+
+` : ''}List up to 8 real conferences/industry events. Prioritize the flagship events where their clients and prospects would actually be — not minor webinars.
 
 Respond with ONLY a JSON array (no prose, no code fences). Each item:
-{"title": string, "date": "YYYY-MM-DD", "location": string, "description": string, "url": string}
+{"title": string, "date": "YYYY-MM-DD", "location": string, "description": string, "url": string, "confirmed": boolean}
 
 Rules:
-- "date": the next upcoming occurrence. Estimate the event's usual month/season and use year ${year}; if that month has already passed (today is ${format(today, 'yyyy-MM-dd')}), use ${year + 1}.
+- "date": the next upcoming occurrence, and it must be AFTER ${format(today, 'yyyy-MM-dd')}. ${webContext ? 'Use exact dates from the web results when given (multi-day events: use the first day) and set "confirmed": true for them. For events not dated in the results, estimate' : `Estimate each event's usual month/season using year ${year}, or ${year + 1} if that month has passed`} from its usual season and set "confirmed": false.
 - "location": "City, Country" or "Virtual".
-- "description": one short sentence.
-- "url": the official event website homepage (e.g. "https://www.ces.tech"). If you are not confident of the exact URL, omit the "url" field rather than guessing.
+- "description": one short sentence on why it matters / who attends.
+- "url": the official event website. ${webContext ? 'Prefer URLs appearing in the web results.' : ''} If unsure of the exact URL, omit it rather than guessing.
 - Only include events you are genuinely confident are real. Better to return fewer than to invent events.`
 
   const res = await fetch('https://api.anthropic.com/v1/messages', {
@@ -894,15 +935,26 @@ Rules:
   }
   if (!Array.isArray(parsed)) throw new Error('PARSE_FAILED')
 
+  const todayStr = format(new Date(), 'yyyy-MM-dd')
+  const seen = new Set<string>()
   return parsed
     .filter((c): c is ConferenceSuggestion =>
       !!c && typeof c.title === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(c.date)
     )
+    .filter((c) => c.date > todayStr) // never suggest events already past
+    .filter((c) => {
+      const k = c.title.trim().toLowerCase()
+      if (seen.has(k)) return false
+      seen.add(k)
+      return true
+    })
     .map((c) => ({
       title: c.title.trim(),
       date: c.date,
       location: typeof c.location === 'string' ? c.location.trim() : undefined,
       description: typeof c.description === 'string' ? c.description.trim() : undefined,
       url: typeof c.url === 'string' && /^https?:\/\//.test(c.url.trim()) ? c.url.trim() : undefined,
+      confirmed: c.confirmed === true,
     }))
+    .sort((a, b) => (a.date < b.date ? -1 : 1))
 }

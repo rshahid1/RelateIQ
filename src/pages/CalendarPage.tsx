@@ -65,9 +65,40 @@ export default function CalendarPage({ contacts, events }: Props) {
     setShowForm(true)
   }
 
-  async function findConferences() {
-    const q = interest.trim()
+  // Personalized search chips derived from the user's book of contacts:
+  // industry keywords (news_terms) first, then the biggest companies.
+  const interestChips = useMemo(() => {
+    const chips: string[] = []
+    const terms = new Set<string>()
+    for (const c of contacts) {
+      const t = c.news_terms?.trim().toLowerCase()
+      if (t) terms.add(t)
+    }
+    chips.push(...[...terms].slice(0, 3))
+    const counts = new Map<string, number>()
+    for (const c of contacts) {
+      const co = c.company?.trim()
+      if (co) counts.set(co, (counts.get(co) ?? 0) + 1)
+    }
+    const topCompanies = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 2).map(([co]) => `${co} industry`)
+    for (const tc of topCompanies) if (chips.length < 4) chips.push(tc)
+    return chips
+  }, [contacts])
+
+  // A short picture of their book so the AI ranks events their clients attend
+  const audienceHint = useMemo(() => {
+    const companies = [...new Set(contacts.map((c) => c.company?.trim()).filter(Boolean))].slice(0, 6)
+    const titles = [...new Set(contacts.map((c) => c.title?.trim()).filter(Boolean))].slice(0, 4)
+    const bits = []
+    if (companies.length) bits.push(`clients at ${companies.join(', ')}`)
+    if (titles.length) bits.push(`roles like ${titles.join(', ')}`)
+    return bits.join('; ') || undefined
+  }, [contacts])
+
+  async function findConferences(query?: string) {
+    const q = (query ?? interest).trim()
     if (!q) return
+    if (query) setInterest(query)
     setDiscoverError(null)
     setAddedMsg(null)
     setSuggestions(null)
@@ -76,9 +107,9 @@ export default function CalendarPage({ contacts, events }: Props) {
     const hasKey = !!localStorage.getItem('apikey_anthropic')
     let results: ConferenceSuggestion[] = []
     if (hasKey) {
-      // AI path — broader/fresher; fall back to the free catalog on any failure
+      // AI path (web-grounded when a Tavily key is set); fall back to the free catalog
       try {
-        results = await discoverConferences(q)
+        results = await discoverConferences(q, audienceHint)
       } catch {
         results = searchCatalog(q)
       }
@@ -89,7 +120,7 @@ export default function CalendarPage({ contacts, events }: Props) {
     setSuggestions(results)
     setSelected(new Set(results.map((_, i) => i)))
     if (results.length === 0) {
-      setDiscoverError('No matches in the built-in list — try a broader industry like "insurance", "tech", "finance", or "healthcare".')
+      setDiscoverError('Nothing found — try a broader industry like "insurance", "tech", "finance", or "healthcare".')
     }
     setFinding(false)
   }
@@ -301,7 +332,7 @@ export default function CalendarPage({ contacts, events }: Props) {
               </button>
             </div>
             <p className="text-xs text-gray-500 mb-3">
-              Search well-known industry events and add them to your calendar — free. Add an Anthropic key in Settings for AI-powered discovery.
+              Find the events your clients actually attend. With your Anthropic + Web search keys set, results are grounded in live web data with verified dates.
             </p>
             <div className="flex gap-2">
               <div className="relative flex-1">
@@ -314,10 +345,26 @@ export default function CalendarPage({ contacts, events }: Props) {
                   onKeyDown={(e) => { if (e.key === 'Enter') findConferences() }}
                 />
               </div>
-              <button className="btn-primary flex-shrink-0" onClick={findConferences} disabled={finding || !interest.trim()}>
+              <button className="btn-primary flex-shrink-0" onClick={() => findConferences()} disabled={finding || !interest.trim()}>
                 {finding ? <Loader2 size={14} className="animate-spin" /> : 'Find'}
               </button>
             </div>
+
+            {interestChips.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mt-2.5">
+                <span className="text-[11px] text-gray-400 self-center">From your book:</span>
+                {interestChips.map((chip) => (
+                  <button
+                    key={chip}
+                    onClick={() => findConferences(chip)}
+                    disabled={finding}
+                    className="text-xs px-2.5 py-1 rounded-full bg-brand-50 text-brand-600 hover:bg-brand-100 transition-colors disabled:opacity-50"
+                  >
+                    {chip}
+                  </button>
+                ))}
+              </div>
+            )}
 
             {discoverError && <p className="text-xs text-amber-700 mt-3">{discoverError}</p>}
             {addedMsg && <p className="text-xs text-brand-600 mt-3 flex items-center gap-1"><CalendarDays size={12} /> {addedMsg}</p>}
@@ -337,9 +384,12 @@ export default function CalendarPage({ contacts, events }: Props) {
                         className="w-4 h-4 rounded accent-brand-600 mt-0.5 flex-shrink-0"
                       />
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium text-gray-900 leading-snug">{s.title}</p>
+                        <p className="text-sm font-medium text-gray-900 leading-snug">
+                          {s.title}
+                          {s.confirmed && <span className="badge bg-emerald-50 text-emerald-700 ml-1.5 align-middle">date verified</span>}
+                        </p>
                         <p className="text-xs text-gray-500 mt-0.5">
-                          {format(parseISO(s.date), 'MMM d, yyyy')}{s.location ? ` · ${s.location}` : ''}
+                          {format(parseISO(s.date), 'MMM d, yyyy')}{!s.confirmed ? ' (est.)' : ''}{s.location ? ` · ${s.location}` : ''}
                         </p>
                         {s.description && <p className="text-xs text-gray-400 mt-0.5 leading-snug">{s.description}</p>}
                         {s.url && (
@@ -358,7 +408,11 @@ export default function CalendarPage({ contacts, events }: Props) {
                   ))}
                 </div>
                 <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100">
-                  <p className="text-[11px] text-gray-400">Dates are estimates — verify before booking.</p>
+                  <p className="text-[11px] text-gray-400">
+                    {suggestions.some((s) => s.confirmed)
+                      ? '“Date verified” = found in live web sources; others are estimates.'
+                      : 'Dates are estimates — verify before booking.'}
+                  </p>
                   <button className="btn-primary text-xs" onClick={addSelected} disabled={selected.size === 0}>
                     Add {selected.size}
                   </button>
