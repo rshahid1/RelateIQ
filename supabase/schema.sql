@@ -77,6 +77,23 @@ create table if not exists public.conferences (
   created_at    timestamptz not null default now()
 );
 
+-- ── Prospects (companies to engage — not yet contacts) ───────────────────────
+create table if not exists public.prospects (
+  id            uuid primary key default gen_random_uuid(),
+  user_id       uuid not null references auth.users(id) on delete cascade,
+  company       text not null,
+  website       text,
+  industry      text,
+  ticker        text,
+  contact_name  text,
+  contact_title text,
+  linkedin_url  text,
+  reason        text,
+  status        text not null default 'new',
+  created_at    timestamptz not null default now(),
+  updated_at    timestamptz not null default now()
+);
+
 -- ── Done commitments (promise checkboxes) ────────────────────────────────────
 create table if not exists public.done_commitments (
   user_id       uuid not null references auth.users(id) on delete cascade,
@@ -88,7 +105,7 @@ create table if not exists public.done_commitments (
 do $$
 declare t text;
 begin
-  foreach t in array array['contacts','life_events','meeting_notes','reflections','conferences','done_commitments']
+  foreach t in array array['contacts','life_events','meeting_notes','reflections','conferences','prospects','done_commitments']
   loop
     execute format('alter table public.%I enable row level security;', t);
     execute format('drop policy if exists "owner_all" on public.%I;', t);
@@ -104,3 +121,4 @@ create index if not exists idx_life_events_contact on public.life_events(contact
 create index if not exists idx_notes_contact       on public.meeting_notes(contact_id);
 create index if not exists idx_reflections_user    on public.reflections(user_id);
 create index if not exists idx_conferences_user    on public.conferences(user_id);
+create index if not exists idx_prospects_user      on public.prospects(user_id);

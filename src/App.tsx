@@ -3,6 +3,7 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import { Loader2 } from 'lucide-react'
 import Sidebar from './components/Sidebar'
 import ContactsPage from './pages/ContactsPage'
+import ProspectsPage from './pages/ProspectsPage'
 import AccountsPage from './pages/AccountsPage'
 import AccountDetailPage from './pages/AccountDetailPage'
 import ContactDetailPage from './pages/ContactDetailPage'
@@ -196,6 +197,7 @@ function Workspace() {
           <Route path="/contacts" element={
             <ContactsPage contacts={contacts} onContactsChange={reloadAll} />
           } />
+          <Route path="/prospects" element={<ProspectsPage />} />
           <Route path="/accounts" element={<AccountsPage contacts={contacts} />} />
           <Route path="/accounts/:company" element={<AccountDetailPage contacts={contacts} />} />
           <Route path="/contacts/:id" element={

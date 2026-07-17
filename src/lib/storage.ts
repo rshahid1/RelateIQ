@@ -6,7 +6,7 @@
  * user via Row-Level Security. Alerts stay in localStorage — they're ephemeral
  * and regenerated from external APIs on each load.
  */
-import { Contact, LifeEvent, MeetingNote, Alert, Reflection, Conference } from '../types'
+import { Contact, LifeEvent, MeetingNote, Alert, Reflection, Conference, Prospect } from '../types'
 import { supabase } from './supabase'
 
 let activeUserId: string | null = null
@@ -234,6 +234,44 @@ export async function updateConference(id: string, data: Partial<Omit<Conference
 
 export async function deleteConference(id: string): Promise<void> {
   const { error } = await supabase.from('conferences').delete().eq('id', id)
+  if (error) throw error
+}
+
+// ── Prospects ─────────────────────────────────────────────────────────────────
+
+export async function getProspects(): Promise<Prospect[]> {
+  const { data, error } = await supabase.from('prospects').select('*').order('created_at', { ascending: false })
+  if (error) throw error
+  return (data ?? []) as Prospect[]
+}
+
+export async function createProspect(data: Omit<Prospect, 'id' | 'created_at' | 'updated_at'>): Promise<Prospect> {
+  let payload = { ...data, user_id: uid() } as Record<string, unknown>
+  let { data: row, error } = await supabase.from('prospects').insert(payload).select().single()
+  for (let i = 0; i < 3 && error; i++) {
+    const stripped = stripMissingColumn(payload, error)
+    if (!stripped) break
+    payload = stripped
+    ;({ data: row, error } = await supabase.from('prospects').insert(payload).select().single())
+  }
+  if (error) throw error
+  return row as Prospect
+}
+
+export async function updateProspect(id: string, data: Partial<Omit<Prospect, 'id' | 'created_at'>>): Promise<void> {
+  let payload = { ...data, updated_at: now() } as Record<string, unknown>
+  let { error } = await supabase.from('prospects').update(payload).eq('id', id)
+  for (let i = 0; i < 3 && error; i++) {
+    const stripped = stripMissingColumn(payload, error)
+    if (!stripped) break
+    payload = stripped
+    ;({ error } = await supabase.from('prospects').update(payload).eq('id', id))
+  }
+  if (error) throw error
+}
+
+export async function deleteProspect(id: string): Promise<void> {
+  const { error } = await supabase.from('prospects').delete().eq('id', id)
   if (error) throw error
 }
 

@@ -65,6 +65,23 @@ export interface Conference {
   created_at: string
 }
 
+export type ProspectStatus = 'new' | 'researching' | 'reached_out'
+
+export interface Prospect {
+  id: string
+  company: string
+  website?: string
+  industry?: string
+  ticker?: string
+  contact_name?: string
+  contact_title?: string
+  linkedin_url?: string
+  reason?: string          // why you want to engage them
+  status: ProspectStatus
+  created_at: string
+  updated_at: string
+}
+
 export type ReflectionCategory = 'working' | 'improve' | 'idea' | 'note'
 
 export interface Reflection {

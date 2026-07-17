@@ -1,10 +1,11 @@
 import { NavLink } from 'react-router-dom'
-import { Users, Calendar, Bell, StickyNote, BarChart2, Settings, Zap, Lightbulb, LogOut, Building2 } from 'lucide-react'
+import { Users, Calendar, Bell, StickyNote, BarChart2, Settings, Zap, Lightbulb, LogOut, Building2, Target } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 
 const links = [
   { to: '/accounts', icon: Building2, label: 'Accounts' },
   { to: '/contacts', icon: Users, label: 'Contacts' },
+  { to: '/prospects', icon: Target, label: 'Prospects' },
   { to: '/calendar', icon: Calendar, label: 'Calendar' },
   { to: '/alerts', icon: Bell, label: 'Alerts' },
   { to: '/notes', icon: StickyNote, label: 'Notes' },
