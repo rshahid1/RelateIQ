@@ -17,6 +17,17 @@ const STATUSES: { id: ProspectStatus; label: string; cls: string }[] = [
 ]
 const statusMeta = (s: ProspectStatus) => STATUSES.find((x) => x.id === s) ?? STATUSES[0]
 
+/** Supabase/PostgREST errors are plain objects, not Error instances — extract a real message. */
+function errMsg(e: unknown, fallback: string): string {
+  if (e instanceof Error && e.message) return e.message
+  if (e && typeof e === 'object') {
+    const o = e as { message?: string; details?: string; hint?: string; code?: string }
+    const m = [o.message, o.hint && `(${o.hint})`, o.code && `[${o.code}]`].filter(Boolean).join(' ')
+    if (m) return m
+  }
+  return fallback
+}
+
 export default function ProspectsPage() {
   const navigate = useNavigate()
   const [prospects, setProspects] = useState<Prospect[]>([])
@@ -33,7 +44,7 @@ export default function ProspectsPage() {
     try {
       setProspects(await getProspects())
     } catch (e) {
-      setLoadError(e instanceof Error ? e.message : 'Could not load prospects.')
+      setLoadError(errMsg(e, 'Could not load prospects.'))
     } finally {
       setLoading(false)
     }
@@ -249,7 +260,7 @@ function ProspectForm({ prospect, onClose, onSaved }: { prospect: Prospect | nul
       else await createProspect(data)
       onSaved()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not save. If it mentions a missing "prospects" table, run the schema SQL in Supabase.')
+      setError(errMsg(err, 'Could not save. If it mentions a missing "prospects" table, run the schema SQL in Supabase.'))
       setSaving(false)
     }
   }
