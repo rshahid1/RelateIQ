@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef, useEffect } from 'react'
-import { Link } from 'react-router-dom'
-import { Plus, Search, Building2, MapPin, Mail, Tag, Upload, X, Check, LayoutGrid, ChevronDown, ChevronRight } from 'lucide-react'
+import { Link, useNavigate } from 'react-router-dom'
+import { Plus, Search, Building2, MapPin, Mail, Tag, Upload, X, Check, LayoutGrid, ChevronDown, ChevronRight, Orbit } from 'lucide-react'
 import { Contact, MeetingNote } from '../types'
 import Avatar from '../components/Avatar'
 import ContactForm from './ContactForm'
@@ -17,7 +17,7 @@ interface Props {
 export default function ContactsPage({ contacts, onContactsChange }: Props) {
   const [search, setSearch] = useState('')
   const [tagFilter, setTagFilter] = useState('')
-  const [view, setView] = useState<'all' | 'account'>('all')
+  const [view, setView] = useState<'all' | 'account' | 'bubbles'>('all')
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const [showForm, setShowForm] = useState(false)
   const [importPreview, setImportPreview] = useState<Partial<ImportedContact>[] | null>(null)
@@ -216,6 +216,13 @@ export default function ContactsPage({ contacts, onContactsChange }: Props) {
           >
             <Building2 size={15} />
           </button>
+          <button
+            onClick={() => setView('bubbles')}
+            className={`px-2.5 py-2 transition-colors border-l border-gray-200 ${view === 'bubbles' ? 'bg-brand-50 text-brand-600' : 'text-gray-400 hover:bg-gray-50'}`}
+            title="Bubble map of accounts"
+          >
+            <Orbit size={15} />
+          </button>
         </div>
       </div>
 
@@ -225,6 +232,8 @@ export default function ContactsPage({ contacts, onContactsChange }: Props) {
           <p className="text-lg">No contacts found</p>
           <p className="text-sm mt-1">Try a different search or add a new contact.</p>
         </div>
+      ) : view === 'bubbles' ? (
+        <ContactBubbles contacts={filtered} />
       ) : accountGroups ? (
         <div className="space-y-6">
           {accountGroups.map((g) => {
@@ -348,6 +357,143 @@ export default function ContactsPage({ contacts, onContactsChange }: Props) {
           </div>
         )
       })()}
+    </div>
+  )
+}
+
+// ── Bubble map: accounts sized by contact count ──────────────────────────────
+
+const BUBBLE_PALETTE = [
+  '#1f8a6d', '#c2971f', '#3b82f6', '#8b5cf6', '#ec4899',
+  '#0ea5e9', '#14b8a6', '#f59e0b', '#ef4444', '#6366f1',
+]
+function colorFor(key: string): string {
+  let h = 0
+  for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0
+  return BUBBLE_PALETTE[h % BUBBLE_PALETTE.length]
+}
+
+interface Bubble { key: string; label: string; count: number; keyCount: number; r: number; x: number; y: number; color: string }
+
+/** Greedy circle-pack: place largest first at center, spiral each next into the nearest gap. */
+function packBubbles(bubbles: Bubble[]): Bubble[] {
+  const placed: Bubble[] = []
+  for (const n of bubbles) {
+    if (placed.length === 0) { n.x = 0; n.y = 0; placed.push(n); continue }
+    const step = Math.max(3, n.r * 0.4)
+    let done = false
+    for (let rad = step; rad < 6000 && !done; rad += step) {
+      const slots = Math.max(10, Math.floor((2 * Math.PI * rad) / step))
+      for (let i = 0; i < slots; i++) {
+        const a = (i / slots) * 2 * Math.PI
+        const x = Math.cos(a) * rad
+        const y = Math.sin(a) * rad
+        let ok = true
+        for (const p of placed) {
+          if (Math.hypot(x - p.x, y - p.y) < p.r + n.r + 4) { ok = false; break }
+        }
+        if (ok) { n.x = x; n.y = y; placed.push(n); done = true; break }
+      }
+    }
+    if (!done) { n.x = 0; n.y = 0; placed.push(n) }
+  }
+  return placed
+}
+
+function ContactBubbles({ contacts }: { contacts: Contact[] }) {
+  const navigate = useNavigate()
+
+  const bubbles = useMemo(() => {
+    const map = new Map<string, Contact[]>()
+    for (const c of contacts) {
+      const co = c.company?.trim()
+      if (!co) continue
+      if (!map.has(co)) map.set(co, [])
+      map.get(co)!.push(c)
+    }
+    const nodes: Bubble[] = [...map.entries()].map(([company, list]) => ({
+      key: company,
+      label: company,
+      count: list.length,
+      keyCount: list.filter((c) => c.tier === 'key').length,
+      r: 26 + 18 * Math.sqrt(list.length),
+      x: 0, y: 0,
+      color: colorFor(company),
+    }))
+    nodes.sort((a, b) => b.r - a.r)
+    return packBubbles(nodes)
+  }, [contacts])
+
+  if (bubbles.length === 0) {
+    return (
+      <div className="text-center py-20 text-gray-400">
+        <Orbit size={30} className="mx-auto mb-3 opacity-30" />
+        <p className="text-lg">No accounts to map</p>
+        <p className="text-sm mt-1">Add a company to your contacts and they’ll cluster here.</p>
+      </div>
+    )
+  }
+
+  // Bounding box → viewBox with padding
+  const pad = 12
+  const minX = Math.min(...bubbles.map((b) => b.x - b.r)) - pad
+  const maxX = Math.max(...bubbles.map((b) => b.x + b.r)) + pad
+  const minY = Math.min(...bubbles.map((b) => b.y - b.r)) - pad
+  const maxY = Math.max(...bubbles.map((b) => b.y + b.r)) + pad
+  const vbW = maxX - minX
+  const vbH = maxY - minY
+
+  const fit = (label: string, r: number) => {
+    const max = Math.floor(r / 4.6)
+    return label.length > max ? label.slice(0, Math.max(1, max - 1)) + '…' : label
+  }
+
+  return (
+    <div className="card p-4">
+      <p className="text-xs text-gray-400 mb-2 px-1">
+        Each bubble is an account — bigger means more contacts. Click one to open its one-pager.
+      </p>
+      <svg
+        viewBox={`${minX} ${minY} ${vbW} ${vbH}`}
+        preserveAspectRatio="xMidYMid meet"
+        className="w-full"
+        style={{ height: 'min(64vh, 620px)' }}
+      >
+        <style>{`.bub{cursor:pointer;transform-box:fill-box;transform-origin:center;transition:transform .18s ease} .bub:hover{transform:scale(1.06)} .bub:hover circle{filter:brightness(1.08)}`}</style>
+        {bubbles.map((b) => {
+          const big = b.r >= 44
+          return (
+            <g
+              key={b.key}
+              className="bub"
+              onClick={() => navigate(`/accounts/${encodeURIComponent(b.key)}`)}
+            >
+              <title>{`${b.label} — ${b.count} contact${b.count > 1 ? 's' : ''}${b.keyCount ? `, ${b.keyCount} key` : ''}`}</title>
+              <circle cx={b.x} cy={b.y} r={b.r} fill={b.color} fillOpacity={0.92} stroke="#fff" strokeWidth={2} />
+              {b.keyCount > 0 && (
+                <circle cx={b.x} cy={b.y} r={b.r - 4} fill="none" stroke="#fff" strokeOpacity={0.55} strokeWidth={1.5} strokeDasharray="3 4" />
+              )}
+              {big && (
+                <text x={b.x} y={b.y - 2} textAnchor="middle" fill="#fff" fontSize={Math.max(10, b.r * 0.17)} fontWeight={600} style={{ pointerEvents: 'none' }}>
+                  {fit(b.label, b.r)}
+                </text>
+              )}
+              <text
+                x={b.x}
+                y={big ? b.y + b.r * 0.32 : b.y + b.r * 0.12}
+                textAnchor="middle"
+                fill="#fff"
+                fillOpacity={big ? 0.85 : 1}
+                fontSize={big ? Math.max(10, b.r * 0.18) : Math.max(12, b.r * 0.42)}
+                fontWeight={big ? 500 : 700}
+                style={{ pointerEvents: 'none' }}
+              >
+                {b.count}
+              </text>
+            </g>
+          )
+        })}
+      </svg>
     </div>
   )
 }
