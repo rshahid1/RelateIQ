@@ -373,24 +373,32 @@ function colorFor(key: string): string {
   return BUBBLE_PALETTE[h % BUBBLE_PALETTE.length]
 }
 
-interface Bubble { key: string; label: string; count: number; keyCount: number; r: number; x: number; y: number; color: string }
+interface Sat { id: string; initials: string; name: string; tier?: string }
+interface System {
+  key: string; label: string; count: number; keyCount: number
+  hubR: number; satR: number; orbitR: number; r: number  // r = bounding radius for packing
+  x: number; y: number; color: string; sats: Sat[]
+}
 
-/** Greedy circle-pack: place largest first at center, spiral each next into the nearest gap. */
-function packBubbles(bubbles: Bubble[]): Bubble[] {
-  const placed: Bubble[] = []
+/**
+ * Greedy circle-pack with a horizontal bias (aspectX) so the field spreads wide
+ * across the page. Largest first at center; each next spirals into the nearest gap.
+ */
+function packBubbles<T extends { r: number; x: number; y: number }>(bubbles: T[], aspectX = 1): T[] {
+  const placed: T[] = []
   for (const n of bubbles) {
     if (placed.length === 0) { n.x = 0; n.y = 0; placed.push(n); continue }
-    const step = Math.max(3, n.r * 0.4)
+    const step = Math.max(3, n.r * 0.35)
     let done = false
-    for (let rad = step; rad < 6000 && !done; rad += step) {
-      const slots = Math.max(10, Math.floor((2 * Math.PI * rad) / step))
+    for (let rad = step; rad < 12000 && !done; rad += step) {
+      const slots = Math.max(12, Math.floor((2 * Math.PI * rad) / step))
       for (let i = 0; i < slots; i++) {
         const a = (i / slots) * 2 * Math.PI
-        const x = Math.cos(a) * rad
+        const x = Math.cos(a) * rad * aspectX
         const y = Math.sin(a) * rad
         let ok = true
         for (const p of placed) {
-          if (Math.hypot(x - p.x, y - p.y) < p.r + n.r + 4) { ok = false; break }
+          if (Math.hypot(x - p.x, y - p.y) < p.r + n.r + 6) { ok = false; break }
         }
         if (ok) { n.x = x; n.y = y; placed.push(n); done = true; break }
       }
@@ -400,10 +408,12 @@ function packBubbles(bubbles: Bubble[]): Bubble[] {
   return placed
 }
 
+const MAX_SATS = 16
+
 function ContactBubbles({ contacts }: { contacts: Contact[] }) {
   const navigate = useNavigate()
 
-  const bubbles = useMemo(() => {
+  const systems = useMemo(() => {
     const map = new Map<string, Contact[]>()
     for (const c of contacts) {
       const co = c.company?.trim()
@@ -411,20 +421,31 @@ function ContactBubbles({ contacts }: { contacts: Contact[] }) {
       if (!map.has(co)) map.set(co, [])
       map.get(co)!.push(c)
     }
-    const nodes: Bubble[] = [...map.entries()].map(([company, list]) => ({
-      key: company,
-      label: company,
-      count: list.length,
-      keyCount: list.filter((c) => c.tier === 'key').length,
-      r: 26 + 18 * Math.sqrt(list.length),
-      x: 0, y: 0,
-      color: colorFor(company),
-    }))
+    const satR = 13
+    const nodes: System[] = [...map.entries()].map(([company, list]) => {
+      const count = list.length
+      const hubR = 20 + 9 * Math.sqrt(count)
+      const shown = list.slice(0, MAX_SATS)
+      // Orbit must be wide enough that satellites don't collide on the ring
+      const orbitR = Math.max(hubR + satR + 7, (shown.length * (2 * satR + 5)) / (2 * Math.PI))
+      return {
+        key: company, label: company, count,
+        keyCount: list.filter((c) => c.tier === 'key').length,
+        hubR, satR, orbitR, r: orbitR + satR + 4,
+        x: 0, y: 0, color: colorFor(company),
+        sats: shown.map((c) => ({
+          id: c.id,
+          initials: `${(c.first_name?.[0] ?? '').toUpperCase()}${(c.last_name?.[0] ?? '').toUpperCase()}` || '·',
+          name: `${c.first_name} ${c.last_name}`.trim(),
+          tier: c.tier,
+        })),
+      }
+    })
     nodes.sort((a, b) => b.r - a.r)
-    return packBubbles(nodes)
+    return packBubbles(nodes, 1.9)
   }, [contacts])
 
-  if (bubbles.length === 0) {
+  if (systems.length === 0) {
     return (
       <div className="text-center py-20 text-gray-400">
         <Orbit size={30} className="mx-auto mb-3 opacity-30" />
@@ -434,12 +455,11 @@ function ContactBubbles({ contacts }: { contacts: Contact[] }) {
     )
   }
 
-  // Bounding box → viewBox with padding
-  const pad = 12
-  const minX = Math.min(...bubbles.map((b) => b.x - b.r)) - pad
-  const maxX = Math.max(...bubbles.map((b) => b.x + b.r)) + pad
-  const minY = Math.min(...bubbles.map((b) => b.y - b.r)) - pad
-  const maxY = Math.max(...bubbles.map((b) => b.y + b.r)) + pad
+  const pad = 14
+  const minX = Math.min(...systems.map((s) => s.x - s.r)) - pad
+  const maxX = Math.max(...systems.map((s) => s.x + s.r)) + pad
+  const minY = Math.min(...systems.map((s) => s.y - s.r)) - pad
+  const maxY = Math.max(...systems.map((s) => s.y + s.r)) + pad
   const vbW = maxX - minX
   const vbH = maxY - minY
 
@@ -449,47 +469,65 @@ function ContactBubbles({ contacts }: { contacts: Contact[] }) {
   }
 
   return (
-    <div className="card p-4">
+    <div className="card p-3">
       <p className="text-xs text-gray-400 mb-2 px-1">
-        Each bubble is an account — bigger means more contacts. Click one to open its one-pager.
+        Each big bubble is an account; the small ones orbiting it are your contacts there.
+        Click a company to open its one-pager, or a contact to open them.
       </p>
       <svg
         viewBox={`${minX} ${minY} ${vbW} ${vbH}`}
         preserveAspectRatio="xMidYMid meet"
         className="w-full"
-        style={{ height: 'min(64vh, 620px)' }}
+        style={{ maxHeight: '78vh' }}
       >
-        <style>{`.bub{cursor:pointer;transform-box:fill-box;transform-origin:center;transition:transform .18s ease} .bub:hover{transform:scale(1.06)} .bub:hover circle{filter:brightness(1.08)}`}</style>
-        {bubbles.map((b) => {
-          const big = b.r >= 44
+        <style>{`.hub,.sat{cursor:pointer;transform-box:fill-box;transform-origin:center;transition:transform .18s ease}.hub:hover{transform:scale(1.05)}.sat:hover{transform:scale(1.28)}.hub:hover circle,.sat:hover circle{filter:brightness(1.08)}`}</style>
+        {systems.map((s) => {
+          const big = s.hubR >= 40
           return (
-            <g
-              key={b.key}
-              className="bub"
-              onClick={() => navigate(`/accounts/${encodeURIComponent(b.key)}`)}
-            >
-              <title>{`${b.label} — ${b.count} contact${b.count > 1 ? 's' : ''}${b.keyCount ? `, ${b.keyCount} key` : ''}`}</title>
-              <circle cx={b.x} cy={b.y} r={b.r} fill={b.color} fillOpacity={0.92} stroke="#fff" strokeWidth={2} />
-              {b.keyCount > 0 && (
-                <circle cx={b.x} cy={b.y} r={b.r - 4} fill="none" stroke="#fff" strokeOpacity={0.55} strokeWidth={1.5} strokeDasharray="3 4" />
-              )}
-              {big && (
-                <text x={b.x} y={b.y - 2} textAnchor="middle" fill="#fff" fontSize={Math.max(10, b.r * 0.17)} fontWeight={600} style={{ pointerEvents: 'none' }}>
-                  {fit(b.label, b.r)}
+            <g key={s.key}>
+              {/* Orbit connectors + satellites */}
+              {s.sats.map((sat, i) => {
+                const a = -Math.PI / 2 + (i / s.sats.length) * 2 * Math.PI
+                const sx = s.x + Math.cos(a) * s.orbitR
+                const sy = s.y + Math.sin(a) * s.orbitR
+                return (
+                  <g key={sat.id}>
+                    <line x1={s.x} y1={s.y} x2={sx} y2={sy} stroke={s.color} strokeOpacity={0.18} strokeWidth={1} />
+                    <g className="sat" onClick={() => navigate(`/contacts/${sat.id}`)}>
+                      <title>{sat.name}{sat.tier === 'key' ? ' · key' : ''}</title>
+                      <circle cx={sx} cy={sy} r={s.satR} fill="#fff" stroke={s.color} strokeWidth={sat.tier === 'key' ? 2.5 : 1.5} />
+                      <text x={sx} y={sy} textAnchor="middle" dominantBaseline="central" fill={s.color} fontSize={s.satR * 0.72} fontWeight={600} style={{ pointerEvents: 'none' }}>
+                        {sat.initials}
+                      </text>
+                    </g>
+                  </g>
+                )
+              })}
+              {/* Company hub */}
+              <g className="hub" onClick={() => navigate(`/accounts/${encodeURIComponent(s.key)}`)}>
+                <title>{`${s.label} — ${s.count} contact${s.count > 1 ? 's' : ''}${s.keyCount ? `, ${s.keyCount} key` : ''}`}</title>
+                <circle cx={s.x} cy={s.y} r={s.hubR} fill={s.color} fillOpacity={0.94} stroke="#fff" strokeWidth={2.5} />
+                {s.keyCount > 0 && (
+                  <circle cx={s.x} cy={s.y} r={s.hubR - 4} fill="none" stroke="#fff" strokeOpacity={0.55} strokeWidth={1.5} strokeDasharray="3 4" />
+                )}
+                {big && (
+                  <text x={s.x} y={s.y - 2} textAnchor="middle" fill="#fff" fontSize={Math.max(10, s.hubR * 0.2)} fontWeight={600} style={{ pointerEvents: 'none' }}>
+                    {fit(s.label, s.hubR)}
+                  </text>
+                )}
+                <text
+                  x={s.x}
+                  y={big ? s.y + s.hubR * 0.34 : s.y + s.hubR * 0.12}
+                  textAnchor="middle"
+                  fill="#fff"
+                  fillOpacity={big ? 0.85 : 1}
+                  fontSize={big ? Math.max(10, s.hubR * 0.2) : Math.max(11, s.hubR * 0.42)}
+                  fontWeight={big ? 500 : 700}
+                  style={{ pointerEvents: 'none' }}
+                >
+                  {s.count}
                 </text>
-              )}
-              <text
-                x={b.x}
-                y={big ? b.y + b.r * 0.32 : b.y + b.r * 0.12}
-                textAnchor="middle"
-                fill="#fff"
-                fillOpacity={big ? 0.85 : 1}
-                fontSize={big ? Math.max(10, b.r * 0.18) : Math.max(12, b.r * 0.42)}
-                fontWeight={big ? 500 : 700}
-                style={{ pointerEvents: 'none' }}
-              >
-                {b.count}
-              </text>
+              </g>
             </g>
           )
         })}
