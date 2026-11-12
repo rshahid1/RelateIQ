@@ -170,11 +170,47 @@ export async function fetchWebMentions(contact: Contact): Promise<WebMention[]> 
   return out.slice(0, 8)
 }
 
-/** Claude synthesizes a personal profile (markdown) from LinkedIn + web mentions. Needs Anthropic key. */
+export interface LinkedInPost {
+  text: string
+  reshared: boolean
+  url?: string
+  posted?: string
+  reactions?: number
+}
+
+/** Recent LinkedIn posts (what they write & reshare) — the richest "what they care about" signal. */
+export async function fetchLinkedInPosts(linkedinUrl: string, limit = 12): Promise<LinkedInPost[]> {
+  const key = apiKey('rapidapi')
+  if (!key) return []
+  try {
+    const res = await fetch(
+      `https://fresh-linkedin-profile-data.p.rapidapi.com/get-profile-posts?linkedin_url=${encodeURIComponent(linkedinUrl)}`,
+      { headers: { 'x-rapidapi-key': key, 'x-rapidapi-host': 'fresh-linkedin-profile-data.p.rapidapi.com' }, signal: AbortSignal.timeout(20000) }
+    )
+    if (!res.ok) return []
+    const data = await res.json()
+    const arr = Array.isArray(data.data) ? data.data : Array.isArray(data) ? data : []
+    return arr
+      .map((p: Record<string, unknown>) => ({
+        text: typeof p.text === 'string' ? p.text.trim() : '',
+        reshared: p.reshared === true || p.reshared === 'true',
+        url: typeof p.post_url === 'string' ? p.post_url : undefined,
+        posted: typeof p.posted === 'string' ? (p.posted as string).slice(0, 10) : undefined,
+        reactions: typeof p.num_reactions === 'number' ? (p.num_reactions as number) : undefined,
+      }))
+      .filter((p: LinkedInPost) => p.text.length > 0)
+      .slice(0, limit)
+  } catch {
+    return []
+  }
+}
+
+/** Claude synthesizes a personal profile (markdown) from LinkedIn profile + posts + web mentions. Needs Anthropic key. */
 export async function generatePersona(
   contact: Contact,
   dossier: LinkedInDossier | null,
-  web: WebMention[] = []
+  web: WebMention[] = [],
+  posts: LinkedInPost[] = []
 ): Promise<string | null> {
   const key = apiKey('anthropic')
   if (!key) return null
@@ -188,25 +224,28 @@ export async function generatePersona(
     dossier?.education.length && `Education: ${dossier.education.join(' | ')}`,
     dossier?.experience.length && `Experience: ${dossier.experience.join(' | ')}`,
     dossier?.audience && `Audience: ${dossier.audience}`,
+    posts.length && `Recent LinkedIn posts (their own words — a "(reshare)" means they amplified someone else's content, which still signals what they care about):\n${posts.map((p) => `- [${p.posted || 'recent'}]${p.reshared ? ' (reshare)' : ''} ${p.text.slice(0, 260).replace(/\s+/g, ' ')}`).join('\n')}`,
     web.length && `Web & news mentions (what the wider internet says about them):\n${web.map((w) => `- ${w.title}${w.source ? ` (${w.source})` : ''}${w.snippet ? `: ${w.snippet}` : ''}`).join('\n')}`,
   ].filter(Boolean).join('\n')
 
   if (!details.trim()) return null
 
-  const prompt = `You help an account manager build genuine, human rapport with a client. Using ONLY the sources below for ${who}${role ? ` (${role})` : ''} — their LinkedIn profile plus wider web/news mentions — write a short profile of who they are as a person, the kind of insight that helps you connect authentically.
+  const prompt = `You help a relationship manager build genuine, human rapport with ${who}${role ? ` (${role})` : ''}. Using ONLY the sources below — their LinkedIn profile, their recent LinkedIn posts, and wider web/news mentions — write a tight profile of who they are, so the manager can connect authentically in a meeting.
 
-Use "## " headings and "- " bullets, exactly these four sections:
+Use "## " headings and "- " bullets, exactly these five sections:
 
 ## Snapshot
-(2-3 bullets: their background and what seems to define them)
-## Likely interests & hobbies
-(2-4 bullets drawn from their bio, education activities, and anything the web mentions suggest — add "(inferred)" to genuine guesses)
-## What they seem to value
-(1-2 bullets)
+(2-3 bullets: their background and what defines them professionally)
+## What they're posting & talking about
+(2-4 bullets from their LinkedIn posts — the themes and causes they champion, and their own takes vs. what they merely reshare. If there are no posts, say "No recent public posts.")
+## Interests & what makes them tick
+(2-4 bullets: likely hobbies, passions, causes — from bio, education activities, and post topics; add "(inferred)" to genuine guesses)
+## Likes & leanings
+(1-3 bullets: what they clearly favor or push for, and anything they're skeptical or critical of — grounded in their posts/mentions; mark guesses "(inferred)")
 ## How to connect
-(2-3 specific, non-salesy conversation starters or rapport tips tied to real details — a recent talk, article, cause, or shared interest works well)
+(2-3 specific, non-salesy openers tied to a real post, topic, cause, or shared interest above)
 
-Be specific and human, never generic. Weave in public activity from the web mentions where relevant. Never invent facts; if a section has little to go on, keep it short.
+Be specific and human, never generic. Lean on their actual posts — quoting a theme they keep returning to is powerful. Never invent facts; if a section has little to go on, keep it short.
 
 Sources:
 ${details}`
@@ -222,7 +261,7 @@ ${details}`
       },
       body: JSON.stringify({
         model: getAiModel(),
-        max_tokens: 600,
+        max_tokens: 800,
         messages: [{ role: 'user', content: prompt }],
       }),
     })

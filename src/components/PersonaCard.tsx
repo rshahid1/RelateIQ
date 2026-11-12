@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react'
 import { Sparkles, Loader2, Heart, RefreshCw } from 'lucide-react'
 import { Contact } from '../types'
 import {
-  fetchLinkedInDossier, fetchWebMentions, generatePersona, getCachedPersona, setCachedPersona,
+  fetchLinkedInDossier, fetchLinkedInPosts, fetchWebMentions, generatePersona,
+  getCachedPersona, setCachedPersona,
 } from '../lib/persona'
 
 /** "Get to know them" sidebar card — LinkedIn-grounded personal insights. */
@@ -38,17 +39,18 @@ export default function PersonaCard({ contact }: { contact: Contact }) {
     }
     setStatus('loading')
     setError(null)
-    // LinkedIn profile + wider web/news mentions, in parallel.
-    const [dossier, web] = await Promise.all([
+    // LinkedIn profile + their recent posts + wider web/news mentions, in parallel.
+    const [dossier, posts, web] = await Promise.all([
       fetchLinkedInDossier(contact.linkedin_url),
+      fetchLinkedInPosts(contact.linkedin_url),
       fetchWebMentions(contact),
     ])
-    if (!dossier && web.length === 0) {
+    if (!dossier && posts.length === 0 && web.length === 0) {
       setStatus('error')
       setError('Couldn’t find enough public info — check the LinkedIn URL and your RapidAPI subscription.')
       return
     }
-    const t = await generatePersona(contact, dossier, web)
+    const t = await generatePersona(contact, dossier, web, posts)
     if (!t) {
       setStatus('error')
       setError('Couldn’t generate insights — verify your Anthropic key is valid (Settings → Test).')
@@ -89,15 +91,15 @@ export default function PersonaCard({ contact }: { contact: Contact }) {
           <div className="space-y-1">{renderPersona(text)}</div>
           {updatedAt && (
             <p className="text-[11px] text-gray-300 mt-3">
-              Built {new Date(updatedAt).toLocaleDateString()} · from LinkedIn + web mentions
+              Built {new Date(updatedAt).toLocaleDateString()} · from their LinkedIn posts, profile &amp; web
             </p>
           )}
         </>
       ) : (
         <>
           <p className="text-sm text-gray-500 mb-3">
-            Build a picture of who {contact.first_name} is — interests, what they value, and natural
-            ways to connect — from their LinkedIn profile and mentions across the web.
+            Build a picture of who {contact.first_name} is — what they post about, their interests,
+            likes &amp; leanings, and natural ways to connect — from their LinkedIn posts, profile, and the web.
           </p>
           <button onClick={generate} className="btn-primary text-sm w-full flex items-center justify-center gap-1.5">
             <Sparkles size={14} /> Discover who they are
