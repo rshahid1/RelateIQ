@@ -2,12 +2,14 @@ import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Target, Plus, Search, Pencil, Trash2, ExternalLink, Linkedin,
-  Building2, UserPlus, Loader2, TrendingUp,
+  Building2, UserPlus, Loader2, TrendingUp, Radar, ChevronDown, ChevronRight, User,
 } from 'lucide-react'
 import { Prospect, ProspectStatus } from '../types'
 import {
   getProspects, createProspect, updateProspect, deleteProspect, createContact,
 } from '../lib/storage'
+import { fetchCompanyHeadlines } from '../lib/analytics'
+import { extractInvestmentSignals, InvestmentSignal } from '../lib/signals'
 import Modal from '../components/Modal'
 
 const STATUSES: { id: ProspectStatus; label: string; cls: string }[] = [
@@ -190,6 +192,7 @@ export default function ProspectsPage() {
                       )}
                     </div>
                     {p.reason && <p className="text-sm text-gray-600 mt-2 leading-relaxed">{p.reason}</p>}
+                    <ProspectSignals prospect={p} />
                   </div>
                   <div className="flex flex-col gap-1.5 flex-shrink-0">
                     <button
@@ -218,6 +221,96 @@ export default function ProspectsPage() {
           onClose={() => setShowForm(false)}
           onSaved={() => { setShowForm(false); reload() }}
         />
+      )}
+    </div>
+  )
+}
+
+const STRENGTH_STYLE: Record<InvestmentSignal['strength'], { cls: string; label: string }> = {
+  hot: { cls: 'bg-emerald-100 text-emerald-700', label: 'HOT' },
+  warm: { cls: 'bg-amber-100 text-amber-700', label: 'WARM' },
+  watch: { cls: 'bg-gray-100 text-gray-500', label: 'WATCH' },
+}
+
+/** Live balance-sheet signal research for a prospect insurer (cached per prospect). */
+function ProspectSignals({ prospect }: { prospect: Prospect }) {
+  const cacheKey = `psig_${prospect.id}`
+  const [open, setOpen] = useState(false)
+  const [signals, setSignals] = useState<InvestmentSignal[] | null>(() => {
+    try { return JSON.parse(localStorage.getItem(cacheKey) || 'null') } catch { return null }
+  })
+  const [status, setStatus] = useState<'idle' | 'loading' | 'done' | 'error' | 'nokey'>('idle')
+
+  async function run(force = false) {
+    setOpen(true)
+    if (signals && !force) return
+    if (!localStorage.getItem('apikey_anthropic')) { setStatus('nokey'); return }
+    setStatus('loading')
+    try {
+      const heads = await fetchCompanyHeadlines(prospect.company, prospect.industry, 18)
+      const sig = await extractInvestmentSignals(prospect.company, heads)
+      setSignals(sig)
+      try { localStorage.setItem(cacheKey, JSON.stringify(sig)) } catch { /* ignore */ }
+      setStatus('done')
+    } catch {
+      setStatus('error')
+    }
+  }
+
+  const hotCount = signals?.filter((s) => s.strength === 'hot').length ?? 0
+
+  return (
+    <div className="mt-2.5">
+      <button
+        onClick={() => (open ? setOpen(false) : run())}
+        className="text-xs font-medium text-brand-600 hover:text-brand-700 inline-flex items-center gap-1"
+      >
+        {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+        <Radar size={13} /> Investment signals
+        {signals && signals.length > 0 && (
+          <span className={`badge ${hotCount ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
+            {hotCount ? `${hotCount} hot` : signals.length}
+          </span>
+        )}
+      </button>
+
+      {open && (
+        <div className="mt-2.5">
+          {status === 'loading' ? (
+            <p className="text-xs text-gray-500 flex items-center gap-1.5"><Loader2 size={12} className="animate-spin" /> Scanning the wire for balance-sheet triggers…</p>
+          ) : status === 'nokey' ? (
+            <p className="text-xs text-amber-700">Add your Anthropic key in Settings to scan for signals.</p>
+          ) : status === 'error' ? (
+            <p className="text-xs text-red-600">Couldn’t scan — <button onClick={() => run(true)} className="underline">retry</button>.</p>
+          ) : signals && signals.length === 0 ? (
+            <p className="text-xs text-gray-400">No active balance-sheet signals right now. Worth a periodic re-scan.</p>
+          ) : signals ? (
+            <div className="space-y-2">
+              {signals.map((s, i) => {
+                const st = STRENGTH_STYLE[s.strength]
+                return (
+                  <div key={i} className="rounded-xl border border-gray-100 bg-gray-50/60 p-3">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className={`badge ${st.cls}`}>{st.label}</span>
+                      <span className="text-xs font-semibold text-gray-900">{s.trigger}</span>
+                      {s.buyer && <span className="text-[11px] text-gray-500 flex items-center gap-0.5 ml-auto"><User size={10} /> {s.buyer}</span>}
+                    </div>
+                    {s.why && <p className="text-xs text-gray-600 leading-relaxed">{s.why}</p>}
+                    {s.opener && <p className="text-xs text-gray-800 mt-1.5 italic">“{s.opener}”</p>}
+                    <div className="flex items-center gap-3 mt-1.5">
+                      {s.url && (
+                        <a href={s.url} target="_blank" rel="noopener noreferrer" className="text-[11px] text-brand-500 hover:underline inline-flex items-center gap-0.5">
+                          Source{s.source ? ` · ${s.source}` : ''} <ExternalLink size={9} />
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+              <button onClick={() => run(true)} className="text-[11px] text-gray-400 hover:text-gray-600">Re-scan</button>
+            </div>
+          ) : null}
+        </div>
       )}
     </div>
   )

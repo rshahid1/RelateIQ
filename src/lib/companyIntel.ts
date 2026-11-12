@@ -3,6 +3,7 @@
  * Powers the account one-pager. Everything degrades gracefully (null on failure).
  */
 import { CompanyHeadline } from './analytics'
+import { SELLER_LENS, SIGNAL_TRIGGERS } from './signals'
 
 export interface StockSnapshot {
   price: number
@@ -140,16 +141,20 @@ export async function generateAccountBrief(
   const key = localStorage.getItem('apikey_anthropic')
   if (!key || headlines.length === 0) return null
   const news = headlines.map((h) => `- ${h.title}${h.source ? ` (${h.source})` : ''}`).join('\n')
-  const prompt = `You are the sharpest account manager alive, prepping to stay close to a client at "${company}". Based only on the recent signals below, write a brief they can act on. Format with "## " headings and "- " bullets, exactly these sections:
+  const prompt = `${SELLER_LENS}
 
-## What's happening
-(2-4 bullets: the most important recent developments, concrete and specific)
+${SIGNAL_TRIGGERS}
+
+You're prepping to engage "${company}" (an insurer). Based only on the signals below, write a brief you can act on. Format with "## " headings and "- " bullets, exactly these sections:
+
+## What changed on their balance sheet
+(2-4 bullets: the developments most relevant to how they invest their general account — capital, earnings/investment income, M&A, leadership, ratings, reinsurance/annuity deals, private-credit moves. Concrete and specific.)
 ## Why it matters to you
-(1-2 bullets: the angle for an account manager / the relationship implication)
+(1-2 bullets: the opening it creates for a private-credit / core fixed-income / OCIO conversation, and who to approach — CIO, Treasurer, CFO)
 ## A natural reason to reach out
-(1 bullet: a specific, non-salesy opener tied to a real signal)
+(1 bullet: a specific, non-salesy opener tied to a real signal above)
 
-Be signal-only — skip anything trivial. Don't invent facts. If the financial context below is relevant, weave it in naturally (e.g. an earnings beat/miss is a great reason to reach out).
+Be signal-only — skip anything that doesn't bear on their investments. Don't invent facts. Weave in the financial context below where relevant (e.g. investment-income trends or a capital raise are strong hooks).
 ${stockNote ? `\nFinancial context: ${stockNote}` : ''}
 
 Recent news:

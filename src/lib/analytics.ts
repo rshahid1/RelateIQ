@@ -7,6 +7,7 @@
  */
 import { Contact, Alert, AlertType } from '../types'
 import { getAiModel } from './ai'
+import { SELLER_LENS } from './signals'
 import { differenceInDays, parseISO, format } from 'date-fns'
 
 function uuid() {
@@ -325,12 +326,14 @@ export async function filterRelevantHeadlines(
   const who = [ctx.hint && `industry/context: ${ctx.hint}`, ctx.title && `a contact there is a "${ctx.title}"`]
     .filter(Boolean)
     .join('; ')
-  const prompt = `I'm an account manager tracking the company "${ctx.company}"${who ? ` (${who})` : ''}. Short company names are often ambiguous — e.g. "WCF" could be an insurer, a curling federation, or a software framework.
+  const prompt = `${SELLER_LENS}
 
-Step 1: infer this specific company's likely industry from the context above.
-Step 2: from the numbered headlines below, keep ONLY the ones clearly about THIS organization in that industry. Be strict: if a headline is plausibly a different entity that shares the name/acronym, EXCLUDE it. Generic mentions that aren't about the company as an organization should also be excluded.
+You're triaging news about "${ctx.company}"${who ? ` (${who})` : ''}. Short names are often ambiguous — e.g. "WCF" could be an insurer, a curling federation, or a software framework.
 
-Respond with ONLY a JSON array of the kept numbers (e.g. [0,3,4]); use [] if none clearly match.
+Step 1: confirm the headline is actually about THIS organization (the insurer), not a different entity that shares the name/acronym — exclude any that aren't.
+Step 2: keep ONLY headlines that would matter to an asset manager covering this insurer's balance sheet — its financials, earnings, capital, M&A, leadership (especially investment/finance roles), ratings, reinsurance/annuity deals, or investment strategy. EXCLUDE routine PR, product marketing, unrelated people, and generic market stories.
+
+Respond with ONLY a JSON array of the kept numbers (e.g. [0,3,4]); use [] if none qualify.
 
 ${list}`
 

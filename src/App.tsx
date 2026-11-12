@@ -19,8 +19,7 @@ import { getContacts, getEvents, getNotes, getAlerts, saveAlerts } from './lib/s
 import { legacyContactCount, alreadyMigrated, migrateLocalToCloud } from './lib/migrateLocal'
 import {
   generateUpcomingEventAlerts, generateOverdueAlerts,
-  fetchWeatherAlerts, fetchCompanyNews, fetchLinkedInChanges, fetchLocalEvents,
-  fetchHolidayAlerts, fetchStockAlerts, fetchEarningsAlerts,
+  fetchCompanyNews, fetchLinkedInChanges, fetchEarningsAlerts,
   fetchCompanyHeadlines,
 } from './lib/analytics'
 import { Contact, LifeEvent, MeetingNote, Alert } from './types'
@@ -67,18 +66,16 @@ function Workspace() {
       ...generateUpcomingEventAlerts(cs, evs),
       ...generateOverdueAlerts(cs),
     ]
-    // External APIs — weather + news need no key; the rest activate once keys are set in Settings
+    // Signal-only feed for an insurance asset manager: company news (investment-
+    // filtered), investment/finance leadership changes, and earnings. Weather,
+    // local events, holidays, and minor stock ticks are intentionally dropped as noise.
     try {
-      const [weather, news, linkedin, localEvents, holidays, stocks, earnings] = await Promise.all([
-        fetchWeatherAlerts(cs),
+      const [news, linkedin, earnings] = await Promise.all([
         fetchCompanyNews(cs),
         fetchLinkedInChanges(cs),
-        fetchLocalEvents(cs),
-        fetchHolidayAlerts(cs),
-        fetchStockAlerts(cs),
         fetchEarningsAlerts(cs),
       ])
-      fresh.push(...weather, ...news, ...linkedin, ...localEvents, ...holidays, ...stocks, ...earnings)
+      fresh.push(...news, ...linkedin, ...earnings)
     } catch {
       // ignore network failures
     }
@@ -141,13 +138,6 @@ function Workspace() {
           }
         } catch { /* skip */ }
       }
-
-      // Stock moves
-      try {
-        for (const a of await fetchStockAlerts(cs)) {
-          fire(`stock_${a.data?.ticker}_${today()}`, `📈 ${a.contact_name}`, a.title)
-        }
-      } catch { /* skip */ }
 
       // Earnings
       try {
