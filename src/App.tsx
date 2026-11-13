@@ -18,9 +18,7 @@ import { useAuth } from './context/AuthContext'
 import { getContacts, getEvents, getNotes, getAlerts, saveAlerts } from './lib/storage'
 import { legacyContactCount, alreadyMigrated, migrateLocalToCloud } from './lib/migrateLocal'
 import {
-  generateUpcomingEventAlerts, generateOverdueAlerts,
   fetchCompanyNews, fetchLinkedInChanges, fetchEarningsAlerts,
-  fetchCompanyHeadlines,
 } from './lib/analytics'
 import { Contact, LifeEvent, MeetingNote, Alert } from './types'
 
@@ -61,14 +59,12 @@ function Workspace() {
 
   const refreshAlerts = useCallback(async () => {
     setAlertsLoading(true)
-    const [cs, evs] = await Promise.all([getContacts(), getEvents()])
-    const fresh: Alert[] = [
-      ...generateUpcomingEventAlerts(cs, evs),
-      ...generateOverdueAlerts(cs),
-    ]
-    // Signal-only feed for an insurance asset manager: company news (investment-
-    // filtered), investment/finance leadership changes, and earnings. Weather,
-    // local events, holidays, and minor stock ticks are intentionally dropped as noise.
+    const cs = await getContacts()
+    // Client-worthy feed only: balance-sheet investment signals from company news,
+    // investment/finance leadership changes, and earnings. Internal CRM nudges
+    // (birthdays, logged life events, overdue reminders) and market noise (weather,
+    // local events, holidays, minor stock ticks) are intentionally excluded.
+    const fresh: Alert[] = []
     try {
       const [news, linkedin, earnings] = await Promise.all([
         fetchCompanyNews(cs),
@@ -128,16 +124,13 @@ function Workspace() {
         }
       }
 
-      // Company news
-      const companies = [...new Set(cs.map((c) => c.company).filter(Boolean) as string[])]
-      for (const company of companies) {
-        try {
-          const headlines = await fetchCompanyHeadlines(company)
-          for (const h of headlines) {
-            if (h.url) fire(`news_${h.url}`, `📰 ${company} in the news`, h.title)
-          }
-        } catch { /* skip */ }
-      }
+      // Balance-sheet investment signals (same client-worthy feed as Alerts)
+      try {
+        for (const a of await fetchCompanyNews(cs)) {
+          const key = a.data?.url ? `sig_${a.data.url}` : `sig_${a.id}`
+          fire(key, `🎯 ${a.title}`, a.message)
+        }
+      } catch { /* skip */ }
 
       // Earnings
       try {

@@ -193,7 +193,11 @@ function AlertCard({
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-2">
             <div>
-              <p className="font-medium text-sm text-gray-900">{alert.title}</p>
+              <p className="font-medium text-sm text-gray-900 flex items-center gap-1.5 flex-wrap">
+                {alert.title}
+                {alert.data?.strength === 'hot' && <span className="badge bg-emerald-100 text-emerald-700">HOT</span>}
+                {alert.data?.strength === 'warm' && <span className="badge bg-amber-100 text-amber-700">WARM</span>}
+              </p>
               <p className="text-sm text-gray-500 mt-0.5">{alert.message}</p>
             </div>
             <button

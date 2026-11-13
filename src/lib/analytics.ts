@@ -7,7 +7,7 @@
  */
 import { Contact, Alert, AlertType } from '../types'
 import { getAiModel } from './ai'
-import { SELLER_LENS } from './signals'
+import { SELLER_LENS, extractInvestmentSignals, InvestmentSignal } from './signals'
 import { differenceInDays, parseISO, format } from 'date-fns'
 
 function uuid() {
@@ -172,38 +172,52 @@ async function newsViaGdelt(company: string): Promise<Headline | null> {
   return { title: article.title, url: article.url }
 }
 
+/**
+ * Client-worthy alerts only: per company, pull recent headlines and extract
+ * genuine balance-sheet / investment signals (hot & warm — "watch" is excluded).
+ * Each alert carries the trigger, why it matters, and a ready opener. Results are
+ * cached per company (6h) so repeated loads/polls don't re-run the AI.
+ */
 export async function fetchCompanyNews(contacts: Contact[]): Promise<Alert[]> {
-  const key = apiKey('newsapi')
   const alerts: Alert[] = []
-  const companiesChecked = new Set<string>()
+  const companies = [...new Set(contacts.map((c) => c.company?.trim()).filter(Boolean) as string[])]
+  const CACHE_MS = 6 * 3600 * 1000
 
-  for (const contact of contacts) {
-    if (!contact.company) continue
-    const companyKey = contact.company.toLowerCase()
-    if (companiesChecked.has(companyKey)) continue
-    companiesChecked.add(companyKey)
-
+  for (const company of companies) {
     try {
-      const headline = key
-        ? await newsViaNewsApi(contact.company, key)
-        : await newsViaGdelt(contact.company)
-      if (!headline) continue
+      const cacheKey = `alertsig_${company.toLowerCase()}`
+      let signals: InvestmentSignal[] | null = null
+      try {
+        const raw = JSON.parse(localStorage.getItem(cacheKey) || 'null')
+        if (raw && Date.now() - raw.ts < CACHE_MS) signals = raw.signals
+      } catch { /* ignore */ }
 
-      const affectedContacts = contacts.filter(
-        (c) => c.company?.toLowerCase() === companyKey
-      )
-      for (const c of affectedContacts) {
+      if (!signals) {
+        const terms = contacts.find((c) => c.company?.trim() === company && c.news_terms)?.news_terms
+        const heads = await fetchCompanyHeadlines(company, terms, 14)
+        signals = heads.length ? await extractInvestmentSignals(company, heads) : []
+        try { localStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), signals })) } catch { /* ignore */ }
+      }
+
+      const strong = signals.filter((s) => s.strength !== 'watch')
+      if (strong.length === 0) continue
+      const primary = contacts.find((c) => c.company?.trim() === company)
+      if (!primary) continue
+
+      for (const s of strong.slice(0, 2)) {
         alerts.push({
           id: uuid(),
-          contact_id: c.id,
-          contact_name: `${c.first_name} ${c.last_name}`,
+          contact_id: primary.id,
+          contact_name: `${primary.first_name} ${primary.last_name}`,
           type: 'company_news' as AlertType,
-          title: `News: ${contact.company}`,
-          message: headline.title,
-          action_suggestion: `${c.first_name}'s company is in the news — great conversation starter.`,
+          title: `${company} — ${s.trigger}`,
+          message: s.why || s.headline,
+          action_suggestion: s.opener
+            ? `Opener: “${s.opener}”${s.buyer ? `  (→ ${s.buyer})` : ''}`
+            : 'A balance-sheet signal worth a call.',
           created_at: new Date().toISOString(),
           dismissed: false,
-          data: { url: headline.url },
+          data: { url: s.url, strength: s.strength, buyer: s.buyer, trigger: s.trigger },
         })
       }
     } catch {
