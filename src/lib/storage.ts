@@ -300,32 +300,48 @@ function alertsKey() {
 
 export function getAlerts(): Alert[] {
   try {
-    return (JSON.parse(localStorage.getItem(alertsKey()) || '[]') as Alert[]).filter((a) => !a.dismissed)
+    return (JSON.parse(localStorage.getItem(alertsKey()) || '[]') as Alert[])
+      .filter((a) => !a.dismissed && ALLOWED_ALERT_TYPES.has(a.type))
   } catch {
     return []
   }
 }
 
+// The only alert types that meet the current "client-worthy signal" bar. Anything
+// else (weather, holidays, local events, stock ticks, birthdays, life events,
+// overdue nudges) is legacy noise and gets purged from storage.
+const ALLOWED_ALERT_TYPES = new Set<string>(['company_news', 'linkedin_change', 'earnings_soon'])
+const MAX_ALERT_AGE_MS = 14 * 24 * 3600 * 1000
+
 export function saveAlerts(freshAlerts: Alert[]) {
   let existing: Alert[] = []
   try { existing = JSON.parse(localStorage.getItem(alertsKey()) || '[]') as Alert[] } catch { /* ignore */ }
-  const dismissed = existing.filter((a) => a.dismissed)
-  const active = existing.filter((a) => !a.dismissed)
-  const today = new Date().toISOString().slice(0, 10)
 
-  // Ephemeral types re-evaluate each refresh — only keep if still in the fresh batch
-  const ephemeral = new Set(['overdue_contact', 'birthday_soon', 'life_event_soon'])
-  const freshByKey = new Map(freshAlerts.map((a) => [`${a.type}_${a.contact_id}`, a]))
+  const now = Date.now()
+  const age = (a: Alert) => now - Date.parse(a.created_at)
+  // Stable identity for a signal (survives id regeneration each refresh) so that
+  // dismissals stick and the same signal isn't duplicated.
+  const sig = (a: Alert) => `${a.type}|${a.contact_id}|${a.title}`.toLowerCase()
 
-  const kept = active.filter((a) => {
-    if (ephemeral.has(a.type)) return freshByKey.has(`${a.type}_${a.contact_id}`)
-    return a.created_at.slice(0, 10) !== today || !freshByKey.has(`${a.type}_${a.contact_id}`)
-  })
+  const fresh = freshAlerts.filter((a) => ALLOWED_ALERT_TYPES.has(a.type))
 
-  const keptKeys = new Set(kept.map((a) => `${a.type}_${a.contact_id}_${a.created_at.slice(0, 10)}`))
-  const toAdd = freshAlerts.filter((a) => !keptKeys.has(`${a.type}_${a.contact_id}_${today}`))
+  // Dismissed: keep recent, allowed-type ones so they don't resurface; drop legacy.
+  const dismissed = existing.filter((a) => a.dismissed && ALLOWED_ALERT_TYPES.has(a.type) && age(a) < 45 * 24 * 3600 * 1000)
+  const dismissedKeys = new Set(dismissed.map(sig))
 
-  localStorage.setItem(alertsKey(), JSON.stringify([...dismissed, ...kept, ...toAdd]))
+  // Merge fresh with still-recent active alerts (allowed types only), de-duped,
+  // dropping dismissed and anything stale or no longer in the guidelines.
+  const seen = new Set<string>()
+  const active: Alert[] = []
+  for (const a of [...fresh, ...existing.filter((x) => !x.dismissed && ALLOWED_ALERT_TYPES.has(x.type))]) {
+    if (age(a) > MAX_ALERT_AGE_MS) continue
+    const k = sig(a)
+    if (dismissedKeys.has(k) || seen.has(k)) continue
+    seen.add(k)
+    active.push(a)
+  }
+
+  localStorage.setItem(alertsKey(), JSON.stringify([...dismissed, ...active]))
 }
 
 export function dismissAlert(id: string) {

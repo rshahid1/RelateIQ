@@ -459,26 +459,33 @@ export async function fetchLinkedInChanges(contacts: Contact[]): Promise<Alert[]
 
   const alerts: Alert[] = []
 
+  const CACHE_MS = 7 * 24 * 3600 * 1000 // re-check each contact's LinkedIn at most weekly
+
   for (const contact of contacts) {
     if (!contact.linkedin_url) continue
 
     try {
-      const res = await fetch(
-        `https://fresh-linkedin-profile-data.p.rapidapi.com/get-linkedin-profile?linkedin_url=${encodeURIComponent(contact.linkedin_url)}&include_skills=false`,
-        {
-          headers: {
-            'x-rapidapi-key': key,
-            'x-rapidapi-host': 'fresh-linkedin-profile-data.p.rapidapi.com',
-          },
-        }
-      )
-      if (!res.ok) continue
-      const data = await res.json()
-      const profile = data.data
-      if (!profile) continue
+      const ck = `lichk_${contact.id}`
+      let snap: { ts: number; company?: string; title?: string } | null = null
+      try {
+        const raw = JSON.parse(localStorage.getItem(ck) || 'null')
+        if (raw && Date.now() - raw.ts < CACHE_MS) snap = raw
+      } catch { /* ignore */ }
 
-      const liCompany: string | undefined = profile.company
-      const liTitle: string | undefined = profile.job_title
+      if (!snap) {
+        const res = await fetch(
+          `https://fresh-linkedin-profile-data.p.rapidapi.com/enrich-lead?linkedin_url=${encodeURIComponent(contact.linkedin_url)}&include_skills=false`,
+          { headers: { 'x-rapidapi-key': key, 'x-rapidapi-host': 'fresh-linkedin-profile-data.p.rapidapi.com' } }
+        )
+        if (!res.ok) continue
+        const profile = (await res.json())?.data
+        if (!profile) continue
+        snap = { ts: Date.now(), company: profile.company ?? profile.company_name, title: profile.job_title ?? profile.headline }
+        try { localStorage.setItem(ck, JSON.stringify(snap)) } catch { /* ignore */ }
+      }
+
+      const liCompany = snap.company
+      const liTitle = snap.title
 
       // Compare against what we have on file — a mismatch suggests a job change
       const companyChanged =
