@@ -185,7 +185,7 @@ export async function fetchCompanyNews(contacts: Contact[]): Promise<Alert[]> {
 
   for (const company of companies) {
     try {
-      const cacheKey = `alertsig_${company.toLowerCase()}`
+      const cacheKey = `alertsig_v2_${company.toLowerCase()}`
       let signals: InvestmentSignal[] | null = null
       try {
         const raw = JSON.parse(localStorage.getItem(cacheKey) || 'null')
@@ -193,7 +193,9 @@ export async function fetchCompanyNews(contacts: Contact[]): Promise<Alert[]> {
       } catch { /* ignore */ }
 
       if (!signals) {
-        const terms = contacts.find((c) => c.company?.trim() === company && c.news_terms)?.news_terms
+        // These are all insurers — scope the query so generic names ("Beneficial
+        // Life", "Pacific Life") don't pull in unrelated phrase/foreign matches.
+        const terms = contacts.find((c) => c.company?.trim() === company && c.news_terms?.trim())?.news_terms?.trim() || 'insurance'
         const heads = await fetchCompanyHeadlines(company, terms, 14)
         signals = heads.length ? await extractInvestmentSignals(company, heads) : []
         try { localStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), signals })) } catch { /* ignore */ }
@@ -262,7 +264,7 @@ async function newsViaGoogleRss(company: string, extra = '', limit = 5): Promise
         published_at: item.querySelector('pubDate')?.textContent?.trim() ?? undefined,
       }
     })
-    .filter((h) => h.title && h.url)
+    .filter((h) => h.title && h.url && isEnglishHeadline(h.title))
 }
 
 export async function fetchCompanyHeadlines(company: string, terms?: string, limit = 5): Promise<CompanyHeadline[]> {
@@ -302,7 +304,7 @@ export async function fetchCompanyHeadlines(company: string, terms?: string, lim
             source: a.domain,
             published_at: a.seendate ? gdeltDate(a.seendate) : undefined,
           }))
-          .filter((h: CompanyHeadline) => h.title && /^https?:\/\//.test(h.url))
+          .filter((h: CompanyHeadline) => h.title && /^https?:\/\//.test(h.url) && isEnglishHeadline(h.title))
           .slice(0, limit)
         if (arts.length > 0) return arts
       }
@@ -315,6 +317,11 @@ export async function fetchCompanyHeadlines(company: string, terms?: string, lim
   } catch {
     return []
   }
+}
+
+/** Reject non-English headlines (CJK, Hangul, Kana, Cyrillic, Arabic, Thai, Hebrew). */
+function isEnglishHeadline(title: string): boolean {
+  return !/[Ѐ-׿؀-ۿ฀-๿぀-ヿ㐀-鿿가-힯]/.test(title)
 }
 
 /** GDELT seendate "20260705T120000Z" → ISO string. */
@@ -344,7 +351,7 @@ export async function filterRelevantHeadlines(
 
 You're triaging news about "${ctx.company}"${who ? ` (${who})` : ''}. Short names are often ambiguous — e.g. "WCF" could be an insurer, a curling federation, or a software framework.
 
-Step 1: confirm the headline is actually about THIS organization (the insurer), not a different entity that shares the name/acronym — exclude any that aren't.
+Step 1: confirm the headline is actually about THIS organization (the insurer), not a different entity that shares the name/acronym, and not a generic use of its name as ordinary words (e.g. "a beneficial life") — exclude any that aren't.
 Step 2: keep ONLY headlines that would matter to an asset manager covering this insurer's balance sheet — its financials, earnings, capital, M&A, leadership (especially investment/finance roles), ratings, reinsurance/annuity deals, or investment strategy. EXCLUDE routine PR, product marketing, unrelated people, and generic market stories.
 
 Respond with ONLY a JSON array of the kept numbers (e.g. [0,3,4]); use [] if none qualify.

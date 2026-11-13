@@ -53,7 +53,13 @@ export async function extractInvestmentSignals(
 
 ${SIGNAL_TRIGGERS}
 
-The insurer is "${company}". From the numbered headlines below, extract ONLY the ones that are genuine balance-sheet / investment triggers. Drop everything else — it's better to return nothing than noise.
+The insurer is "${company}" — a specific insurance company. From the numbered headlines below, extract ONLY the ones that are genuine balance-sheet / investment triggers about THIS insurer.
+
+Hard rejects (exclude these, no exceptions):
+- Not about this specific insurance company (a different company/person sharing the name, or a generic use of the words — e.g. "beneficial life" as a phrase, not the insurer)
+- Not in English
+- Not a balance-sheet / investment trigger (marketing, product PR, sponsorships, routine filings)
+It is far better to return an empty array than to include a weak or wrong-entity item.
 
 Return ONLY a JSON array (no prose, no code fences). One object per kept headline:
 {"i": <headline number>, "trigger": "<2-4 word label>", "why": "<one sentence: why this matters for an asset manager pitching their general account>", "buyer": "<the role to approach, e.g. CIO / Treasurer / CFO>", "opener": "<one specific, non-salesy opening line tied to this exact event>", "strength": "hot" | "warm" | "watch"}
@@ -87,6 +93,7 @@ ${list}`
     const parsed = JSON.parse(text.slice(start, end + 1))
     if (!Array.isArray(parsed)) return []
     const order = { hot: 0, warm: 1, watch: 2 } as const
+    const seen = new Set<string>()
     return parsed
       .map((s: Record<string, unknown>) => {
         const h = typeof s.i === 'number' ? headlines[s.i] : undefined
@@ -103,7 +110,13 @@ ${list}`
           strength,
         } as InvestmentSignal
       })
-      .filter((x: InvestmentSignal | null): x is InvestmentSignal => !!x)
+      .filter((x: InvestmentSignal | null): x is InvestmentSignal => {
+        if (!x) return false
+        const k = (x.trigger + '|' + x.headline).toLowerCase().slice(0, 100)
+        if (seen.has(k)) return false
+        seen.add(k)
+        return true
+      })
       .sort((a: InvestmentSignal, b: InvestmentSignal) => order[a.strength] - order[b.strength])
   } catch {
     return []
